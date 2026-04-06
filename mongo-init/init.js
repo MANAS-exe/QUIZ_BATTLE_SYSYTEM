@@ -6,6 +6,7 @@ db.questions.insertMany([
 
   // ── EASY — Vocabulary ─────────────────────────────────────────
   {
+    question_id: "q_001",
     text: "Which word is a synonym of 'Happy'?",
     options: ["Angry", "Joyful", "Tired", "Sad"],
     correctIndex: 1,
@@ -14,6 +15,7 @@ db.questions.insertMany([
     avgResponseTimeMs: 7000
   },
   {
+    question_id: "q_002",
     text: "Which word is the antonym of 'Expand'?",
     options: ["Grow", "Stretch", "Shrink", "Widen"],
     correctIndex: 2,
@@ -22,6 +24,7 @@ db.questions.insertMany([
     avgResponseTimeMs: 7500
   },
   {
+    question_id: "q_003",
     text: "Choose the correct homophone: 'I could ___ the flowers from the garden.'",
     options: ["sea", "see", "si", "cel"],
     correctIndex: 1,
@@ -30,6 +33,7 @@ db.questions.insertMany([
     avgResponseTimeMs: 8000
   },
   {
+    question_id: "q_004",
     text: "Which of these is a NOUN?",
     options: ["Quickly", "Beautiful", "Freedom", "Run"],
     correctIndex: 2,
@@ -38,6 +42,7 @@ db.questions.insertMany([
     avgResponseTimeMs: 7000
   },
   {
+    question_id: "q_005",
     text: "Pick the correct article: '___ apple a day keeps the doctor away.'",
     options: ["A", "An", "The", "No article needed"],
     correctIndex: 1,
@@ -48,6 +53,7 @@ db.questions.insertMany([
 
   // ── EASY — Real-life Conversation ─────────────────────────────
   {
+    question_id: "q_006",
     text: "You meet someone for the first time at work. What is the most polite greeting?",
     options: [
       "Hey, what's up?",
@@ -63,6 +69,7 @@ db.questions.insertMany([
 
   // ── MEDIUM — Grammar ──────────────────────────────────────────
   {
+    question_id: "q_007",
     text: "Choose the correct sentence:",
     options: [
       "She don't like coffee.",
@@ -76,6 +83,7 @@ db.questions.insertMany([
     avgResponseTimeMs: 12000
   },
   {
+    question_id: "q_008",
     text: "Which sentence uses the Present Perfect tense correctly?",
     options: [
       "I am eating breakfast already.",
@@ -89,6 +97,7 @@ db.questions.insertMany([
     avgResponseTimeMs: 13000
   },
   {
+    question_id: "q_009",
     text: "Fill in the blank: 'Neither the students nor the teacher ___ ready.'",
     options: ["were", "are", "was", "have been"],
     correctIndex: 2,
@@ -99,6 +108,7 @@ db.questions.insertMany([
 
   // ── MEDIUM — Vocabulary & Idioms ──────────────────────────────
   {
+    question_id: "q_010",
     text: "What does the idiom 'bite the bullet' mean?",
     options: [
       "To eat something very hard",
@@ -112,6 +122,7 @@ db.questions.insertMany([
     avgResponseTimeMs: 14000
   },
   {
+    question_id: "q_011",
     text: "Which word correctly completes: 'The manager gave a ___ speech that inspired everyone.'",
     options: ["monotonous", "motivational", "murmuring", "misleading"],
     correctIndex: 1,
@@ -120,6 +131,7 @@ db.questions.insertMany([
     avgResponseTimeMs: 13000
   },
   {
+    question_id: "q_012",
     text: "Choose the sentence with correct punctuation:",
     options: [
       "However, she decided to stay.",
@@ -135,6 +147,7 @@ db.questions.insertMany([
 
   // ── MEDIUM — Job Interview / Professional ─────────────────────
   {
+    question_id: "q_013",
     text: "In a job interview, which response best answers 'Tell me about yourself'?",
     options: [
       "I am a very hard-working person and I want money.",
@@ -150,6 +163,7 @@ db.questions.insertMany([
 
   // ── HARD — Advanced Grammar ───────────────────────────────────
   {
+    question_id: "q_014",
     text: "Which sentence uses the subjunctive mood correctly?",
     options: [
       "I wish I was taller.",
@@ -163,6 +177,7 @@ db.questions.insertMany([
     avgResponseTimeMs: 20000
   },
   {
+    question_id: "q_015",
     text: "Identify the dangling modifier: which sentence has an error?",
     options: [
       "Walking to school, the birds were chirping.",
@@ -178,6 +193,7 @@ db.questions.insertMany([
 
   // ── HARD — Vocabulary ─────────────────────────────────────────
   {
+    question_id: "q_016",
     text: "Which pair are homophones?",
     options: [
       "Principle / Principal",
@@ -191,6 +207,7 @@ db.questions.insertMany([
     avgResponseTimeMs: 19000
   },
   {
+    question_id: "q_017",
     text: "What does 'perspicacious' mean?",
     options: [
       "Having a strong sense of smell",
@@ -206,6 +223,7 @@ db.questions.insertMany([
 
   // ── HARD — Formal Writing ─────────────────────────────────────
   {
+    question_id: "q_018",
     text: "Which opening line is most appropriate for a formal complaint letter?",
     options: [
       "Hey, I am very angry about this.",
@@ -221,6 +239,7 @@ db.questions.insertMany([
 
   // ── HARD — Fluency / Pronunciation context ────────────────────
   {
+    question_id: "q_019",
     text: "Which word has the stress on the SECOND syllable?",
     options: ["Photograph", "Photography", "Photographic", "Photo"],
     correctIndex: 1,
@@ -231,6 +250,7 @@ db.questions.insertMany([
 
   // ── HARD — Sentence Structure ─────────────────────────────────
   {
+    question_id: "q_020",
     text: "Choose the sentence that is in PASSIVE voice:",
     options: [
       "The chef cooked a delicious meal.",

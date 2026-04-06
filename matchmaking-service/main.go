@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net"
 	"os"
@@ -64,13 +65,13 @@ func main() {
 
 // loggingInterceptor logs every incoming unary RPC call
 func loggingInterceptor(
-	ctx interface{},
+	ctx context.Context,
 	req interface{},
 	info *grpc.UnaryServerInfo,
 	handler grpc.UnaryHandler,
 ) (interface{}, error) {
 	log.Printf("→ gRPC call: %s", info.FullMethod)
-	return handler.(func(interface{}, interface{}) (interface{}, error))(ctx, req)
+	return handler(ctx, req)
 }
 
 func getEnv(key, fallback string) string {
