@@ -12,9 +12,11 @@ import (
 )
 
 const (
-	exchangeName = "sx"                  // single topic exchange for all events
-	exchangeType = "topic"
-	keyMatchCreated = "match.created"    // routing key consumed by Room Service
+	exchangeName     = "sx"              // single topic exchange for all events
+	exchangeType     = "topic"
+	keyMatchCreated  = "match.created"   // routing key consumed by Room Service
+	keyRoundCompleted = "round.completed" // routing key for round-end scoring
+	keyMatchFinished  = "match.finished"  // routing key for match-end persistence
 )
 
 // Publisher holds a single AMQP connection and channel.
@@ -100,6 +102,95 @@ func (p *Publisher) PublishMatchCreated(room *models.Room) error {
 	// confirms := ch.NotifyPublish(make(chan amqp.Confirmation, 1))
 	// if ack := <-confirms; !ack.Ack { /* retry */ }
 
+	return nil
+}
+
+// RoundCompletedEvent is published after every round (timer expired or all answered).
+// Consumers use this to reveal the correct answer and finalise that round's scores.
+type RoundCompletedEvent struct {
+	RoomID           string    `json:"room_id"`
+	RoundNumber      int       `json:"round_number"`
+	QuestionID       string    `json:"question_id"`
+	CorrectIndex     int       `json:"correct_index"` // revealed only after round ends
+	RoundStartedAtMs int64     `json:"round_started_at_ms"`
+	CompletedAt      time.Time `json:"completed_at"`
+}
+
+// MatchFinishedEvent is published once all rounds are done.
+// Consumed by the leaderboard/persistence service to write final standings.
+type MatchFinishedEvent struct {
+	RoomID      string    `json:"room_id"`
+	TotalRounds int       `json:"total_rounds"`
+	FinishedAt  time.Time `json:"finished_at"`
+}
+
+// PublishRoundCompleted fires a round.completed event.
+// The correct answer index is included so consumers can score and reveal it
+// to clients without the answer ever travelling through the client stream
+// before the round closes.
+func (p *Publisher) PublishRoundCompleted(roomID string, roundNum int, questionID string, correctIndex int, roundStartedAtMs int64) error {
+	event := RoundCompletedEvent{
+		RoomID:           roomID,
+		RoundNumber:      roundNum,
+		QuestionID:       questionID,
+		CorrectIndex:     correctIndex,
+		RoundStartedAtMs: roundStartedAtMs,
+		CompletedAt:      time.Now(),
+	}
+
+	body, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("marshal round.completed: %w", err)
+	}
+
+	if err := p.channel.Publish(
+		exchangeName,
+		keyRoundCompleted,
+		false,
+		false,
+		amqp.Publishing{
+			ContentType:  "application/json",
+			DeliveryMode: amqp.Persistent,
+			Timestamp:    time.Now(),
+			Body:         body,
+		},
+	); err != nil {
+		return fmt.Errorf("publish round.completed: %w", err)
+	}
+
+	log.Printf("📨 Published round.completed — room: %s round: %d", roomID, roundNum)
+	return nil
+}
+
+// PublishMatchFinished fires a match.finished event after all rounds complete.
+func (p *Publisher) PublishMatchFinished(roomID string, totalRounds int) error {
+	event := MatchFinishedEvent{
+		RoomID:      roomID,
+		TotalRounds: totalRounds,
+		FinishedAt:  time.Now(),
+	}
+
+	body, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("marshal match.finished: %w", err)
+	}
+
+	if err := p.channel.Publish(
+		exchangeName,
+		keyMatchFinished,
+		false,
+		false,
+		amqp.Publishing{
+			ContentType:  "application/json",
+			DeliveryMode: amqp.Persistent,
+			Timestamp:    time.Now(),
+			Body:         body,
+		},
+	); err != nil {
+		return fmt.Errorf("publish match.finished: %w", err)
+	}
+
+	log.Printf("🏁 Published match.finished — room: %s total rounds: %d", roomID, totalRounds)
 	return nil
 }
 
