@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'providers/game_provider.dart';
 import 'screens/leaderboard_screen.dart';
 import 'screens/matchmaking_screen.dart';
 import 'screens/quiz_screen.dart';
@@ -36,13 +37,15 @@ final _router = GoRouter(
     ),
   ],
 
-  // Redirect to matchmaking if game state is lost (e.g. app killed mid-match)
+  // Redirect to matchmaking if game state is missing (e.g. direct URL or app killed mid-match)
   redirect: (context, routerState) {
     final path = routerState.uri.path;
-    final gameRoutes = ['/quiz', '/leaderboard', '/results'];
+    const gameRoutes = ['/quiz', '/leaderboard', '/results'];
     if (gameRoutes.contains(path)) {
-      // In a real app, check if roomId exists in provider before allowing access
-      // For now, allow all routes
+      final gameState = ProviderScope.containerOf(context).read(gameProvider);
+      if (gameState.roomId == null) {
+        return '/matchmaking';
+      }
     }
     return null;
   },

@@ -704,7 +704,7 @@ class _StandingRow extends StatelessWidget {
                 shape: BoxShape.circle, color: _avatarBg),
             alignment: Alignment.center,
             child: Text(
-              score.username[0].toUpperCase(),
+              score.username.isNotEmpty ? score.username[0].toUpperCase() : '?',
               style: const TextStyle(
                   color: Colors.white,
                   fontSize: 14,

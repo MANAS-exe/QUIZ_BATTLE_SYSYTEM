@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gomodule/redigo/redis"
+	"go.mongodb.org/mongo-driver/mongo"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -32,6 +33,7 @@ type MatchmakingHandler struct {
 	quiz.UnimplementedMatchmakingServiceServer
 
 	pool      *redis.Pool
+	mongoDB   *mongo.Database
 	publisher *rabbitmq.Publisher
 
 	// mu guards playerChans — one buffered channel per waiting player
@@ -39,9 +41,10 @@ type MatchmakingHandler struct {
 	playerChans map[string]chan *quiz.MatchEvent
 }
 
-func NewMatchmakingHandler(pool *redis.Pool, publisher *rabbitmq.Publisher) *MatchmakingHandler {
+func NewMatchmakingHandler(pool *redis.Pool, mongoDB *mongo.Database, publisher *rabbitmq.Publisher) *MatchmakingHandler {
 	return &MatchmakingHandler{
 		pool:        pool,
+		mongoDB:     mongoDB,
 		publisher:   publisher,
 		playerChans: make(map[string]chan *quiz.MatchEvent),
 	}
@@ -253,6 +256,18 @@ func (h *MatchmakingHandler) tryCreateRoom() {
 		log.Printf("❌ CreateRoom failed: %v", err)
 		return
 	}
+
+	// Select and cache questions in Redis for this room so GetRoomQuestions
+	// and StreamGameEvents can find them immediately.
+	playerIDs := make([]string, len(players))
+	for i, p := range players {
+		playerIDs[i] = p.UserID
+	}
+	if _, err := SelectQuestionsForRoom(h.pool, h.mongoDB, room.ID, playerIDs, room.TotalRounds); err != nil {
+		log.Printf("❌ SelectQuestionsForRoom failed for room %s: %v", room.ID, err)
+		return
+	}
+	log.Printf("📚 Questions selected for room %s", room.ID)
 
 	if err := h.publisher.PublishMatchCreated(room); err != nil {
 		log.Printf("⚠️  PublishMatchCreated: %v", err)

@@ -66,7 +66,7 @@ func main() {
 	mongoDB := mongoClient.Database("quizdb")
 
 	// Register matchmaking handler
-	matchHandler := handlers.NewMatchmakingHandler(redisPool, publisher)
+	matchHandler := handlers.NewMatchmakingHandler(redisPool, mongoDB, publisher)
 	matchHandler.Register(grpcServer)
 
 	// Register quiz handler (game rounds + answer submission)

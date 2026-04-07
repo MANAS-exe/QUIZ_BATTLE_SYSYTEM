@@ -72,8 +72,12 @@ class _QuizScreenState extends ConsumerState<QuizScreen>
 
   void _startStream() {
     final gameState = ref.read(gameProvider);
-    final roomId = gameState.roomId ?? 'room-abc-123';
-    final userId = gameState.userId ?? 'u4';
+    final roomId = gameState.roomId;
+    final userId = gameState.userId;
+    if (roomId == null || userId == null) {
+      debugPrint('[QuizScreen] Missing roomId or userId — cannot start stream');
+      return;
+    }
 
     final stream = ref
         .read(gameServiceProvider)
@@ -366,7 +370,22 @@ class _QuizScreenState extends ConsumerState<QuizScreen>
             optionState: optState,
             locked: state.hasAnswered || state.roundExpired || revealActive,
             delay: Duration(milliseconds: 80 + i * 70),
-            onTap: () => ref.read(gameProvider.notifier).submitAnswer(i),
+            onTap: () {
+                    final gs = ref.read(gameProvider);
+                    if (gs.hasAnswered || gs.roundExpired) return;
+                    ref.read(gameProvider.notifier).submitAnswer(i);
+                    // Fire-and-forget gRPC call — UI is already locked optimistically
+                    ref.read(gameServiceProvider).submitAnswer(
+                      roomId: gs.roomId!,
+                      userId: gs.userId!,
+                      roundNumber: gs.currentRound,
+                      questionId: gs.currentQuestion!.questionId,
+                      answerIndex: i,
+                    ).catchError((e) {
+                      debugPrint('[QuizScreen] submitAnswer gRPC error: $e');
+                      return false;
+                    });
+                  },
           ),
         );
       }),

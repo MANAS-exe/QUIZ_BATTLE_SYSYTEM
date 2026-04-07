@@ -98,6 +98,8 @@ class GameService {
     return _quizClient
         .streamGameEvents(req)
         .map(_mapProtoEvent)
+        .where((e) => e != null)
+        .cast<app.GameEvent>()
         .handleError((e) {
       debugPrint('[GameService] streamGameEvents error: $e');
       throw e;
@@ -157,7 +159,7 @@ class GameService {
   // PROTO → DART MAPPERS
   // ─────────────────────────────────────────
 
-  app.GameEvent _mapProtoEvent(pb.GameEvent proto) {
+  app.GameEvent? _mapProtoEvent(pb.GameEvent proto) {
     if (proto.hasQuestion()) {
       final q = proto.question;
       return app.QuestionBroadcastEvent(
@@ -217,7 +219,9 @@ class GameService {
         player: _mapPlayer(pj.player),
       );
     }
-    throw UnimplementedError('Unknown GameEvent: $proto');
+    // Unknown event type — log and return null so the stream keeps running.
+    debugPrint('[GameService] Unknown GameEvent type received: $proto');
+    return null;
   }
 
   app.PlayerScore _mapScore(pb.PlayerScore s) => app.PlayerScore(

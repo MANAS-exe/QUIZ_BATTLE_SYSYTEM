@@ -147,9 +147,17 @@ func (s *QuizService) RunRound(
 
 	// ── 3. Broadcast QuestionBroadcast ─────────────────────────────────────────
 	const roundDuration = 30 * time.Second
-	deadline := time.Now().Add(roundDuration)
+	now := time.Now()
+	deadline := now.Add(roundDuration)
 	deadlineMs := deadline.UnixMilli()
-	roundStartedAtMs := time.Now().UnixMilli()
+	roundStartedAtMs := now.UnixMilli()
+
+	// Store round start time in Redis so SubmitAnswer can read it for
+	// accurate response-time calculation. TTL = room lifetime.
+	startedAtKey := fmt.Sprintf("room:%s:round:%d:started_at", roomID, roundNum)
+	if _, setErr := conn.Do("SET", startedAtKey, roundStartedAtMs, "EX", 30*60); setErr != nil {
+		log.Printf("⚠️  Failed to store round start time room=%s round=%d: %v", roomID, roundNum, setErr)
+	}
 
 	broadcast(&quiz.GameEvent{
 		Event: &quiz.GameEvent_Question{

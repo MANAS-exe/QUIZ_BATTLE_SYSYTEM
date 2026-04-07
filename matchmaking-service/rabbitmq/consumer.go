@@ -10,6 +10,7 @@ import (
 	goredis "github.com/gomodule/redigo/redis"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 
 	rdb "quiz-battle/matchmaking/redis"
@@ -233,8 +234,14 @@ func (c *Consumer) process(ev AnswerEvent) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	oid, parseErr := primitive.ObjectIDFromHex(ev.QuestionID)
+	if parseErr != nil {
+		log.Printf("⚠️  Invalid question ID %s, discarding answer", ev.QuestionID)
+		return nil
+	}
+
 	var q questionDoc
-	err = c.questions.FindOne(ctx, bson.M{"question_id": ev.QuestionID}).Decode(&q)
+	err = c.questions.FindOne(ctx, bson.M{"_id": oid}).Decode(&q)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			// Unknown question — discard rather than loop forever.
@@ -260,7 +267,19 @@ func (c *Consumer) process(ev AnswerEvent) error {
 		}
 	}
 
-	// ── 4. Update leaderboard (atomic Lua) ───────────────────
+	// ── 4a. Track correct answers and response time ───────────
+	if isCorrect {
+		if incrErr := rdb.IncrCorrectAnswers(c.redis, ev.RoomID, ev.UserID); incrErr != nil {
+			log.Printf("⚠️  IncrCorrectAnswers room=%s user=%s: %v", ev.RoomID, ev.UserID, incrErr)
+		}
+	}
+	if responseMs := ev.SubmittedAtMs - ev.RoundStartedAtMs; responseMs > 0 && responseMs < 120_000 {
+		if trackErr := rdb.TrackResponseTime(c.redis, ev.RoomID, ev.UserID, responseMs); trackErr != nil {
+			log.Printf("⚠️  TrackResponseTime room=%s user=%s: %v", ev.RoomID, ev.UserID, trackErr)
+		}
+	}
+
+	// ── 4b. Update leaderboard (atomic Lua) ──────────────────
 	// UpdateScore uses ZINCRBY + ZREVRANK in a single Lua script.
 	// Even if points == 0 we call it so the member always appears in the set.
 	rank, err := rdb.UpdateScore(c.redis, ev.RoomID, ev.UserID, points)
@@ -275,7 +294,9 @@ func (c *Consumer) process(ev AnswerEvent) error {
 		return fmt.Errorf("HSET %s/%s: %w", answersKey, ev.UserID, err)
 	}
 	// TTL mirrors the room lifetime so stale answer hashes are cleaned up automatically.
-	conn.Do("EXPIRE", answersKey, answersTTLSeconds)
+	if _, expErr := conn.Do("EXPIRE", answersKey, answersTTLSeconds); expErr != nil {
+		log.Printf("⚠️  EXPIRE %s failed (memory leak risk): %v", answersKey, expErr)
+	}
 
 	log.Printf("✅ Scored — user: %s  room: %s  round: %d  correct: %v  points: %d  rank: %d",
 		ev.UserID, ev.RoomID, ev.RoundNumber, isCorrect, points, rank)

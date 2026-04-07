@@ -203,13 +203,24 @@ func (h *QuizServiceHandler) SubmitAnswer(ctx context.Context, req *quiz.AnswerR
 		return nil, status.Error(codes.InvalidArgument, "room_id, user_id, and question_id are required")
 	}
 
+	// Fetch the round start time stored by RunRound for response-time calculation.
+	var roundStartedAtMs int64
+	rdConn := h.redisPool.Get()
+	if startedAt, err := goredis.Int64(rdConn.Do("GET",
+		fmt.Sprintf("room:%s:round:%d:started_at", req.RoomId, req.RoundNumber),
+	)); err == nil {
+		roundStartedAtMs = startedAt
+	}
+	rdConn.Close()
+
 	event := rabbitmq.AnswerSubmittedEvent{
-		RoomID:        req.RoomId,
-		UserID:        req.UserId,
-		RoundNumber:   int(req.RoundNumber),
-		QuestionID:    req.QuestionId,
-		AnswerIndex:   int(req.AnswerIndex),
-		SubmittedAtMs: req.SubmittedAtMs,
+		RoomID:           req.RoomId,
+		UserID:           req.UserId,
+		RoundNumber:      int(req.RoundNumber),
+		QuestionID:       req.QuestionId,
+		AnswerIndex:      int(req.AnswerIndex),
+		SubmittedAtMs:    req.SubmittedAtMs,
+		RoundStartedAtMs: roundStartedAtMs,
 	}
 
 	if err := h.publisher.PublishAnswerSubmitted(event); err != nil {
@@ -339,19 +350,43 @@ func (h *QuizServiceHandler) runGameLoop(roomID string, room *gameRoom) {
 // LEADERBOARD HELPERS
 // ─────────────────────────────────────────
 
-func (h *QuizServiceHandler) buildLeaderboardEvent(roomID string, roundNum int) (*quiz.GameEvent, error) {
+func (h *QuizServiceHandler) buildPlayerScores(roomID string) ([]*quiz.PlayerScore, error) {
 	entries, err := rdb.GetLeaderboard(h.redisPool, roomID)
 	if err != nil {
 		return nil, err
 	}
 
+	userIDs := make([]string, len(entries))
+	for i, e := range entries {
+		userIDs[i] = e.UserID
+	}
+
+	usernames, correctCounts, avgResponseMs, err := rdb.GetPlayerMeta(h.redisPool, roomID, userIDs)
+	if err != nil {
+		log.Printf("⚠️  GetPlayerMeta room=%s: %v — metadata will be empty", roomID, err)
+		usernames = map[string]string{}
+		correctCounts = map[string]int{}
+		avgResponseMs = map[string]int{}
+	}
+
 	scores := make([]*quiz.PlayerScore, len(entries))
 	for i, e := range entries {
 		scores[i] = &quiz.PlayerScore{
-			UserId: e.UserID,
-			Score:  int32(e.Score),
-			Rank:   int32(e.Rank),
+			UserId:         e.UserID,
+			Username:       usernames[e.UserID],
+			Score:          int32(e.Score),
+			Rank:           int32(e.Rank),
+			AnswersCorrect: int32(correctCounts[e.UserID]),
+			AvgResponseMs:  int32(avgResponseMs[e.UserID]),
 		}
+	}
+	return scores, nil
+}
+
+func (h *QuizServiceHandler) buildLeaderboardEvent(roomID string, roundNum int) (*quiz.GameEvent, error) {
+	scores, err := h.buildPlayerScores(roomID)
+	if err != nil {
+		return nil, err
 	}
 
 	return &quiz.GameEvent{
@@ -366,32 +401,25 @@ func (h *QuizServiceHandler) buildLeaderboardEvent(roomID string, roundNum int) 
 }
 
 func (h *QuizServiceHandler) buildMatchEndEvent(roomID string, totalRounds int) (*quiz.GameEvent, error) {
-	entries, err := rdb.GetLeaderboard(h.redisPool, roomID)
+	scores, err := h.buildPlayerScores(roomID)
 	if err != nil {
 		return nil, err
 	}
 
-	scores := make([]*quiz.PlayerScore, len(entries))
-	for i, e := range entries {
-		scores[i] = &quiz.PlayerScore{
-			UserId: e.UserID,
-			Score:  int32(e.Score),
-			Rank:   int32(e.Rank),
-		}
-	}
-
-	var winnerUserID string
-	if len(entries) > 0 {
-		winnerUserID = entries[0].UserID
+	var winnerUserID, winnerUsername string
+	if len(scores) > 0 {
+		winnerUserID = scores[0].UserId
+		winnerUsername = scores[0].Username
 	}
 
 	return &quiz.GameEvent{
 		Event: &quiz.GameEvent_MatchEnd{
 			MatchEnd: &quiz.MatchEnd{
-				RoomId:        roomID,
-				WinnerUserId:  winnerUserID,
-				TotalRounds:   int32(totalRounds),
-				FinalScores:   scores,
+				RoomId:          roomID,
+				WinnerUserId:    winnerUserID,
+				WinnerUsername:  winnerUsername,
+				TotalRounds:     int32(totalRounds),
+				FinalScores:     scores,
 			},
 		},
 	}, nil
