@@ -84,18 +84,24 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            _buildHeader(state),
-            if (state.lastRoundResult != null)
-              _buildAnswerReveal(state.lastRoundResult!),
-            const SizedBox(height: 16),
-            if (top3.isNotEmpty) _buildPodium(top3, state.userId),
-            if (rest.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              Expanded(
-                child: _buildRestList(rest, state.userId),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Column(
+                  children: [
+                    _buildHeader(state),
+                    if (state.lastRoundResult != null)
+                      _buildAnswerReveal(state.lastRoundResult!),
+                    const SizedBox(height: 16),
+                    if (top3.isNotEmpty) _buildPodium(top3, state.userId),
+                    if (rest.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      _buildRestListInline(rest, state.userId),
+                    ],
+                  ],
+                ),
               ),
-            ] else
-              const Spacer(),
+            ),
             _buildNextRoundHint(isLastRound),
           ],
         ),
@@ -258,26 +264,28 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
     );
   }
 
-  // ─── Rest of leaderboard (rank 4+) ────────────────────────
+  // ─── Rest of leaderboard (rank 4+) — inline for ScrollView ─
 
-  Widget _buildRestList(List<PlayerScore> rest, String? myUserId) {
-    return ListView.builder(
+  Widget _buildRestListInline(List<PlayerScore> rest, String? myUserId) {
+    return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      itemCount: rest.length,
-      itemBuilder: (_, i) {
-        final score = rest[i];
-        final isMe = score.userId == myUserId;
-        final delta = _rankDelta(score.userId, score.rank);
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: _ListRow(
-            score: score,
-            isMe: isMe,
-            rankDelta: delta,
-            delay: Duration(milliseconds: 80 + i * 50),
-          ),
-        );
-      },
+      child: Column(
+        children: rest.asMap().entries.map((e) {
+          final i = e.key;
+          final score = e.value;
+          final isMe = score.userId == myUserId;
+          final delta = _rankDelta(score.userId, score.rank);
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: _ListRow(
+              score: score,
+              isMe: isMe,
+              rankDelta: delta,
+              delay: Duration(milliseconds: 80 + i * 50),
+            ),
+          );
+        }).toList(),
+      ),
     );
   }
 

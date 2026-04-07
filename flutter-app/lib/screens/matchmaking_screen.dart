@@ -49,6 +49,9 @@ class _MatchmakingScreenState extends ConsumerState<MatchmakingScreen>
   // both subscribeToMatch (provider) and joinMatchmaking (RPC call).
   late final String _userId;
 
+  // Whether the user has pressed "Start" to begin matchmaking
+  bool _searching = false;
+
   // Pulsing outer ring controller
   late final AnimationController _pulseController;
   late final Animation<double> _pulseScale;
@@ -63,12 +66,14 @@ class _MatchmakingScreenState extends ConsumerState<MatchmakingScreen>
   @override
   void initState() {
     super.initState();
-    // Set _userId BEFORE the first build so the provider uses the same value
-    // that joinMatchmaking will register on the server.
     _userId = 'player-${DateTime.now().millisecondsSinceEpoch % 100000}';
     _setupAnimations();
+  }
+
+  void _onStartPressed() {
+    setState(() => _searching = true);
     _startCountdown();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _joinMatchmaking());
+    _joinMatchmaking();
   }
 
   void _joinMatchmaking() {
@@ -145,6 +150,20 @@ class _MatchmakingScreenState extends ConsumerState<MatchmakingScreen>
 
   @override
   Widget build(BuildContext context) {
+    if (!_searching) {
+      return Scaffold(
+        backgroundColor: _bg,
+        body: SafeArea(
+          child: Column(
+            children: [
+              _buildTopBar(context),
+              Expanded(child: _buildLobby()),
+            ],
+          ),
+        ),
+      );
+    }
+
     final streamState = ref.watch(matchmakingStreamProvider(_userId));
     final waitSeconds = ref.watch(waitTimerProvider);
 
@@ -177,6 +196,96 @@ class _MatchmakingScreenState extends ConsumerState<MatchmakingScreen>
           ],
         ),
       ),
+    );
+  }
+
+  // ── Lobby (pre-matchmaking) ───────────────────────────────
+
+  Widget _buildLobby() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Spacer(),
+
+        // Icon
+        Container(
+          width: 100,
+          height: 100,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: _coral.withValues(alpha: 0.15),
+            border: Border.all(color: _coral.withValues(alpha: 0.3), width: 2),
+          ),
+          child: const Icon(
+            Icons.sports_esports_rounded,
+            color: _coral,
+            size: 48,
+          ),
+        ),
+
+        const SizedBox(height: 32),
+
+        const Text(
+          'Ready to battle?',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 26,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        Text(
+          'Press Start when you\'re ready to\nfind an opponent',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.5),
+            fontSize: 15,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        // Show userId so the user knows which player they are
+        Text(
+          _userId,
+          style: TextStyle(
+            color: _coral.withValues(alpha: 0.7),
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+
+        const Spacer(),
+
+        // Start button
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
+          child: SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _onStartPressed,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _coral,
+                padding: const EdgeInsets.symmetric(vertical: 18),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              child: const Text(
+                'Start Matchmaking',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+        ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.2, end: 0),
+      ],
     );
   }
 

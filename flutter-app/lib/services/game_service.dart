@@ -2,8 +2,6 @@ import 'package:fixnum/fixnum.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grpc/grpc.dart';
-import 'package:grpc/grpc_web.dart';
-import 'package:grpc/src/client/channel.dart' show ClientChannelBase;
 
 import '../models/game_event.dart' as app;
 import '../proto/quiz.pb.dart' as pb;
@@ -14,11 +12,7 @@ import '../proto/quiz.pbgrpc.dart' as pbgrpc;
 // ─────────────────────────────────────────
 
 // Native (iOS / Android / macOS) — direct gRPC on port 50051
-// Web (Chrome) — gRPC-Web via the HTTP wrapper on port 8080
-ClientChannelBase _buildChannel() {
-  if (kIsWeb) {
-    return GrpcWebClientChannel.xhr(Uri.parse('http://localhost:8080'));
-  }
+ClientChannel _buildChannel() {
   return ClientChannel(
     'localhost',
     port: 50051,
@@ -31,7 +25,7 @@ ClientChannelBase _buildChannel() {
 // ─────────────────────────────────────────
 
 class GameService {
-  late final ClientChannelBase _channel;
+  late final ClientChannel _channel;
   late final pbgrpc.MatchmakingServiceClient _matchmakingClient;
   late final pbgrpc.QuizServiceClient _quizClient;
 

@@ -22,10 +22,10 @@ import (
 
 const (
 	matchmakingPoolKey = "matchmaking:pool"
-	minPlayersToStart  = 1               // 1 = solo play allowed
+	minPlayersToStart  = 2                // require at least 2 players
 	maxPlayersPerRoom  = 10
 	matchmakingTimeout = 30 * time.Second
-	lobbyWait          = 8 * time.Second // wait this long for more players before starting solo
+	lobbyWait          = 10 * time.Second // always wait this long before creating a room
 )
 
 // MatchmakingHandler implements quiz.MatchmakingServiceServer.
@@ -92,17 +92,20 @@ func (h *MatchmakingHandler) JoinMatchmaking(ctx context.Context, req *quiz.Join
 
 	log.Printf("👤 Player %s joined matchmaking pool (pool size: %d)", req.Username, poolSize)
 
-	if poolSize >= minPlayersToStart {
-		// If only 1 player, wait lobbyWait for more players before creating a solo room.
-		// If 2+ players are already waiting, create the room immediately.
-		if poolSize == 1 {
-			go func() {
-				time.Sleep(lobbyWait)
-				h.tryCreateRoom()
-			}()
-		} else {
-			go h.tryCreateRoom()
-		}
+	// Always wait lobbyWait before attempting room creation to give
+	// all players time to join. Only schedule once (when first player joins).
+	if poolSize == 1 {
+		go func() {
+			time.Sleep(lobbyWait)
+			h.tryCreateRoom()
+		}()
+	} else if poolSize >= minPlayersToStart {
+		// Additional players joined — schedule another attempt after lobbyWait
+		// in case even more players want to join.
+		go func() {
+			time.Sleep(lobbyWait)
+			h.tryCreateRoom()
+		}()
 	}
 
 	return &quiz.JoinResponse{
