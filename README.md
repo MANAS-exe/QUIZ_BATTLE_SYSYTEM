@@ -66,7 +66,6 @@ xcode-select --install
 ### 1. Start infrastructure services
 
 ```bash
-cd /Users/manaskumar/Desktop/quiz_battle
 docker compose up -d
 ```
 
