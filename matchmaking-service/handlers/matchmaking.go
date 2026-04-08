@@ -65,6 +65,14 @@ func (h *MatchmakingHandler) JoinMatchmaking(ctx context.Context, req *quiz.Join
 		return nil, status.Error(codes.InvalidArgument, "user_id and username are required")
 	}
 
+	// Clean up any stale channel from a previous session (e.g. Play Again)
+	h.mu.Lock()
+	if oldCh, ok := h.playerChans[req.UserId]; ok {
+		close(oldCh)
+		delete(h.playerChans, req.UserId)
+	}
+	h.mu.Unlock()
+
 	conn := h.pool.Get()
 	defer conn.Close()
 
@@ -108,11 +116,82 @@ func (h *MatchmakingHandler) JoinMatchmaking(ctx context.Context, req *quiz.Join
 		}()
 	}
 
+	// Broadcast WaitingUpdate with player list to all waiting subscribers
+	go h.broadcastWaitingUpdate()
+
 	return &quiz.JoinResponse{
 		Success:       true,
 		Message:       "Added to matchmaking pool",
 		QueuePosition: fmt.Sprintf("%d players waiting", poolSize),
 	}, nil
+}
+
+// buildWaitingUpdateEvent fetches the current pool and returns a WaitingUpdate event.
+func (h *MatchmakingHandler) buildWaitingUpdateEvent() *quiz.MatchEvent {
+	conn := h.pool.Get()
+	defer conn.Close()
+
+	userIDs, err := redis.Strings(conn.Do("ZRANGE", matchmakingPoolKey, 0, -1))
+	if err != nil {
+		log.Printf("⚠️  buildWaitingUpdateEvent ZRANGE: %v", err)
+		return nil
+	}
+
+	var players []*quiz.Player
+	for _, uid := range userIDs {
+		vals, err := redis.Strings(conn.Do("HMGET", fmt.Sprintf("player:%s", uid), "username", "rating"))
+		if err != nil || len(vals) < 2 || vals[0] == "" {
+			continue
+		}
+		rating := 0
+		if vals[1] != "" {
+			rating, _ = strconv.Atoi(vals[1])
+		}
+		players = append(players, &quiz.Player{
+			UserId:   uid,
+			Username: vals[0],
+			Rating:   int32(rating),
+		})
+	}
+
+	return &quiz.MatchEvent{
+		Event: &quiz.MatchEvent_WaitingUpdate{
+			WaitingUpdate: &quiz.WaitingUpdate{
+				PlayersInPool: int32(len(players)),
+				Players:       players,
+			},
+		},
+	}
+}
+
+// broadcastWaitingUpdate sends a WaitingUpdate event to all subscribed players.
+func (h *MatchmakingHandler) broadcastWaitingUpdate() {
+	event := h.buildWaitingUpdateEvent()
+	if event == nil {
+		return
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	for _, ch := range h.playerChans {
+		select {
+		case ch <- event:
+		default:
+		}
+	}
+}
+
+// sendWaitingUpdateTo sends the current pool state to a single player's channel.
+func (h *MatchmakingHandler) sendWaitingUpdateTo(ch chan *quiz.MatchEvent) {
+	event := h.buildWaitingUpdateEvent()
+	if event == nil {
+		return
+	}
+	select {
+	case ch <- event:
+	default:
+	}
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -159,8 +238,8 @@ func (h *MatchmakingHandler) SubscribeToMatch(req *quiz.SubscribeRequest, stream
 		return status.Error(codes.InvalidArgument, "user_id is required")
 	}
 
-	// Create a buffered channel so tryCreateRoom never blocks on delivery
-	ch := make(chan *quiz.MatchEvent, 1)
+	// Buffered channel — receives WaitingUpdate and MatchFound events
+	ch := make(chan *quiz.MatchEvent, 4)
 
 	h.mu.Lock()
 	h.playerChans[req.UserId] = ch
@@ -168,7 +247,6 @@ func (h *MatchmakingHandler) SubscribeToMatch(req *quiz.SubscribeRequest, stream
 
 	defer func() {
 		h.mu.Lock()
-		// Only delete if it's still our channel (LeaveMatchmaking may have closed it)
 		if h.playerChans[req.UserId] == ch {
 			delete(h.playerChans, req.UserId)
 		}
@@ -177,29 +255,43 @@ func (h *MatchmakingHandler) SubscribeToMatch(req *quiz.SubscribeRequest, stream
 
 	log.Printf("📡 Player %s subscribed to match events", req.UserId)
 
+	// Immediately send the current pool state to this player so they see
+	// who's already waiting (fixes late-joiner not seeing existing players).
+	go func() {
+		time.Sleep(200 * time.Millisecond) // brief delay to let channel register
+		h.sendWaitingUpdateTo(ch)
+	}()
+
 	ctx := stream.Context()
-	select {
-	case <-ctx.Done():
-		log.Printf("📴 Player %s disconnected", req.UserId)
-		return nil
+	timeout := time.After(matchmakingTimeout)
 
-	case event, ok := <-ch:
-		if !ok {
-			// Channel closed by LeaveMatchmaking
+	for {
+		select {
+		case <-ctx.Done():
+			log.Printf("📴 Player %s disconnected", req.UserId)
 			return nil
-		}
-		if err := stream.Send(event); err != nil {
-			return err
-		}
-		// Stream can close after MatchFound — Flutter opens StreamGameEvents next
-		return nil
 
-	case <-time.After(matchmakingTimeout):
-		return stream.Send(&quiz.MatchEvent{
-			Event: &quiz.MatchEvent_MatchCancelled{
-				MatchCancelled: &quiz.MatchCancelled{Reason: "timeout"},
-			},
-		})
+		case event, ok := <-ch:
+			if !ok {
+				// Channel closed by LeaveMatchmaking
+				return nil
+			}
+			if err := stream.Send(event); err != nil {
+				return err
+			}
+			// If this was MatchFound, close the stream — Flutter opens StreamGameEvents next
+			if event.GetMatchFound() != nil {
+				return nil
+			}
+			// WaitingUpdate — keep looping for more events
+
+		case <-timeout:
+			return stream.Send(&quiz.MatchEvent{
+				Event: &quiz.MatchEvent_MatchCancelled{
+					MatchCancelled: &quiz.MatchCancelled{Reason: "timeout"},
+				},
+			})
+		}
 	}
 }
 

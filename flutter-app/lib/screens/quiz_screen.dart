@@ -13,7 +13,7 @@ import '../services/game_service.dart';
 // CONSTANTS
 // ─────────────────────────────────────────
 
-const _coral = Color(0xFFE94560);
+const _coral = Color(0xFFC96442);
 const _bg = Color(0xFF0D0D1A);
 const _surface = Color(0xFF1A1A2E);
 const _gold = Color(0xFFFFB830);
@@ -201,8 +201,17 @@ class _QuizScreenState extends ConsumerState<QuizScreen>
           TextButton(
             onPressed: () {
               Navigator.of(ctx).pop();
+              // Notify server so it stops counting this player for early-exit
+              final gs = ref.read(gameProvider);
+              ref.read(gameServiceProvider).submitAnswer(
+                roomId: gs.roomId!,
+                userId: gs.userId!,
+                roundNumber: gs.currentRound,
+                questionId: '',
+                answerIndex: -1, // forfeit signal
+              ).catchError((_) => false);
               ref.read(gameProvider.notifier).forfeitMatch();
-              context.goNamed('results');
+              context.goNamed('spectating');
             },
             child: const Text('Leave', style: TextStyle(color: _coral)),
           ),

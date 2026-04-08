@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../services/auth_service.dart';
 
-const _coral = Color(0xFFE94560);
+const _coral = Color(0xFFC96442);
 const _bg = Color(0xFF0D0D1A);
 const _surface = Color(0xFF1A1A2E);
 

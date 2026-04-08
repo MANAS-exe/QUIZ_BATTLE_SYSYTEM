@@ -13,6 +13,7 @@ enum MatchPhase {
   starting,     // room found, loading questions
   inRound,      // active question on screen
   betweenRounds,// showing round result / leaderboard
+  spectating,   // forfeited — waiting for match to end
   finished,     // match over, showing results
 }
 
@@ -181,6 +182,17 @@ class GameNotifier extends StateNotifier<GameState> {
 
   void _handleEvent(GameEvent event) {
     debugPrint('[GameProvider] Event: ${event.runtimeType}');
+
+    // While spectating, only process leaderboard updates and match end
+    if (state.phase == MatchPhase.spectating) {
+      if (event is MatchEndEvent) {
+        _onMatchEnd(event);
+      } else if (event is LeaderboardUpdateEvent) {
+        _onLeaderboard(event);
+      }
+      return;
+    }
+
     switch (event) {
       case QuestionBroadcastEvent():
         _onQuestion(event);
@@ -304,43 +316,12 @@ class GameNotifier extends StateNotifier<GameState> {
     );
   }
 
-  // ── Forfeit (leave mid-match, show results) ────────────────
+  // ── Forfeit (spectate until match ends) ─────────────────────
 
   void forfeitMatch() {
-    _eventSub?.cancel();
     _countdownTimer?.cancel();
-
-    // Build a synthetic MatchEndEvent from whatever we know so far
-    final scores = state.leaderboard.isNotEmpty
-        ? state.leaderboard
-        : state.players
-            .map((p) => PlayerScore(
-                  userId: p.userId,
-                  username: p.username,
-                  score: 0,
-                  rank: 1,
-                  answersCorrect: 0,
-                  avgResponseMs: 0,
-                  isConnected: p.userId != state.userId,
-                ))
-            .toList();
-
-    // Determine winner (highest score, or empty if no scores yet)
-    final sorted = [...scores]..sort((a, b) => b.score.compareTo(a.score));
-    final winner = sorted.isNotEmpty ? sorted.first : null;
-
-    state = state.copyWith(
-      phase: MatchPhase.finished,
-      matchEnd: MatchEndEvent(
-        roomId: state.roomId ?? '',
-        winnerUserId: winner?.userId ?? '',
-        winnerUsername: winner?.username ?? '',
-        totalRounds: state.totalRounds,
-        durationSeconds: 0,
-        finalScores: scores,
-      ),
-      leaderboard: scores,
-    );
+    // Keep _eventSub alive so we still receive MatchEnd from the server
+    state = state.copyWith(phase: MatchPhase.spectating);
   }
 
   // ── Cleanup ────────────────────────────────────────────────

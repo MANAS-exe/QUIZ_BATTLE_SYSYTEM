@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/reflection"
 
 	"quiz-battle/matchmaking/handlers"
+	"quiz-battle/matchmaking/middleware"
 	"quiz-battle/matchmaking/rabbitmq"
 	rdb "quiz-battle/matchmaking/redis"
 )
@@ -51,7 +52,8 @@ func main() {
 	}
 
 	grpcServer := grpc.NewServer(
-		grpc.UnaryInterceptor(loggingInterceptor),
+		grpc.UnaryInterceptor(middleware.AuthUnaryInterceptor),
+		grpc.StreamInterceptor(middleware.AuthStreamInterceptor),
 	)
 
 	// ── MongoDB ───────────────────────────────────────────────
@@ -64,6 +66,10 @@ func main() {
 	log.Printf("✅ MongoDB connected: %s", mongoURI)
 
 	mongoDB := mongoClient.Database("quizdb")
+
+	// Register auth handler
+	authHandler := handlers.NewAuthHandler(mongoDB)
+	authHandler.RegisterService(grpcServer)
 
 	// Register matchmaking handler
 	matchHandler := handlers.NewMatchmakingHandler(redisPool, mongoDB, publisher)
@@ -115,17 +121,6 @@ func main() {
 	if err := grpcServer.Serve(lis); err != nil {
 		log.Fatalf("❌ gRPC server error: %v", err)
 	}
-}
-
-// loggingInterceptor logs every incoming unary RPC call
-func loggingInterceptor(
-	ctx context.Context,
-	req interface{},
-	info *grpc.UnaryServerInfo,
-	handler grpc.UnaryHandler,
-) (interface{}, error) {
-	log.Printf("→ gRPC call: %s", info.FullMethod)
-	return handler(ctx, req)
 }
 
 func getEnv(key, fallback string) string {

@@ -114,12 +114,20 @@ func NewQuizService(rdb *goredis.Pool, mongoDB *mongo.Database, pub *rabbitmq.Pu
 //  5. Exits early if all players have already answered
 //  6. Publishes "round.completed" to RabbitMQ (triggers scoring + reveal)
 //  7. If no questions remain, publishes "match.finished"
+// RoundInfo holds data about a completed round for the caller to broadcast.
+type RoundInfo struct {
+	QuestionID        string
+	CorrectIndex      int
+	CorrectAnswerText string // the actual text of the correct option
+}
+
 func (s *QuizService) RunRound(
 	ctx context.Context,
 	roomID string,
 	roundNum int,
 	broadcast BroadcastFn,
-) error {
+	connectedCountFn func() int,
+) (*RoundInfo, error) {
 	conn := s.rdb.Get()
 	defer conn.Close()
 
@@ -127,13 +135,13 @@ func (s *QuizService) RunRound(
 	questionsKey := fmt.Sprintf("room:%s:questions", roomID)
 	questionID, err := goredis.String(conn.Do("LPOP", questionsKey))
 	if err != nil {
-		return fmt.Errorf("pop question (room %s round %d): %w", roomID, roundNum, err)
+		return nil, fmt.Errorf("pop question (room %s round %d): %w", roomID, roundNum, err)
 	}
 
 	// ── 2. Fetch question from MongoDB ─────────────────────────────────────────
 	questionOID, err := primitive.ObjectIDFromHex(questionID)
 	if err != nil {
-		return fmt.Errorf("invalid question ID %q: %w", questionID, err)
+		return nil, fmt.Errorf("invalid question ID %q: %w", questionID, err)
 	}
 
 	fetchCtx, fetchCancel := context.WithTimeout(ctx, 5*time.Second)
@@ -142,7 +150,7 @@ func (s *QuizService) RunRound(
 	var q Question
 	if err := s.mongoDB.Collection("questions").
 		FindOne(fetchCtx, bson.M{"_id": questionOID}).Decode(&q); err != nil {
-		return fmt.Errorf("fetch question %s: %w", questionID, err)
+		return nil, fmt.Errorf("fetch question %s: %w", questionID, err)
 	}
 
 	// ── 3. Broadcast QuestionBroadcast ─────────────────────────────────────────
@@ -152,8 +160,6 @@ func (s *QuizService) RunRound(
 	deadlineMs := deadline.UnixMilli()
 	roundStartedAtMs := now.UnixMilli()
 
-	// Store round start time in Redis so SubmitAnswer can read it for
-	// accurate response-time calculation. TTL = room lifetime.
 	startedAtKey := fmt.Sprintf("room:%s:round:%d:started_at", roomID, roundNum)
 	if _, setErr := conn.Do("SET", startedAtKey, roundStartedAtMs, "EX", 30*60); setErr != nil {
 		log.Printf("⚠️  Failed to store round start time room=%s round=%d: %v", roomID, roundNum, setErr)
@@ -176,12 +182,7 @@ func (s *QuizService) RunRound(
 		},
 	})
 
-	// ── 4 & 5. Server-side countdown with early-exit on all-answered ───────────
-	playerCountKey := fmt.Sprintf("room:%s:players", roomID)
-	playerCount, err := goredis.Int64(conn.Do("HLEN", playerCountKey))
-	if err != nil {
-		return fmt.Errorf("get player count: %w", err)
-	}
+	// ── 4 & 5. Server-side countdown — early-exit when all CONNECTED players answered
 	answersKey := fmt.Sprintf("room:%s:answers:%d", roomID, roundNum)
 
 	ticker := time.NewTicker(time.Second)
@@ -193,7 +194,7 @@ timerLoop:
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, ctx.Err()
 
 		case <-timer.C:
 			break timerLoop
@@ -209,8 +210,18 @@ timerLoop:
 				},
 			})
 
+			// Use connected player count (not total registered) for early exit
+			activeCount := int64(connectedCountFn())
+
+			// If no players left, exit immediately
+			if activeCount <= 0 {
+				log.Printf("⚡ No connected players — skipping round %d", roundNum)
+				break timerLoop
+			}
+
 			answered, err := goredis.Int64(conn.Do("HLEN", answersKey))
-			if err == nil && answered >= playerCount {
+			if err == nil && answered >= activeCount {
+				log.Printf("⚡ All %d connected players answered — advancing round %d", activeCount, roundNum)
 				break timerLoop
 			}
 		}
@@ -220,7 +231,6 @@ timerLoop:
 	if err := s.publisher.PublishRoundCompleted(
 		roomID, roundNum, questionID, q.CorrectIndex, roundStartedAtMs,
 	); err != nil {
-		// Non-fatal — log and continue so remaining rounds are not blocked
 		log.Printf("WARN publish round.completed room=%s round=%d: %v", roomID, roundNum, err)
 	}
 
@@ -235,7 +245,16 @@ timerLoop:
 		}
 	}
 
-	return nil
+	correctText := ""
+	if q.CorrectIndex >= 0 && q.CorrectIndex < len(q.Options) {
+		correctText = q.Options[q.CorrectIndex]
+	}
+
+	return &RoundInfo{
+		QuestionID:        questionID,
+		CorrectIndex:      q.CorrectIndex,
+		CorrectAnswerText: correctText,
+	}, nil
 }
 
 // ─────────────────────────────────────────

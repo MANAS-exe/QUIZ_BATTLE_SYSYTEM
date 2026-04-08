@@ -8,6 +8,7 @@ import 'screens/login_screen.dart';
 import 'screens/matchmaking_screen.dart';
 import 'screens/quiz_screen.dart';
 import 'screens/results_screen.dart';
+import 'screens/spectating_screen.dart';
 import 'services/auth_service.dart';
 import 'services/game_service.dart';
 
@@ -39,6 +40,11 @@ final _router = GoRouter(
       builder: (context, state) => const LeaderboardScreen(),
     ),
     GoRoute(
+      path: '/spectating',
+      name: 'spectating',
+      builder: (context, state) => const SpectatingScreen(),
+    ),
+    GoRoute(
       path: '/results',
       name: 'results',
       builder: (context, state) => const ResultsScreen(),
@@ -61,7 +67,7 @@ final _router = GoRouter(
     }
 
     // Game routes require an active room
-    const gameRoutes = ['/quiz', '/leaderboard', '/results'];
+    const gameRoutes = ['/quiz', '/leaderboard', '/spectating', '/results'];
     if (gameRoutes.contains(path)) {
       final gameState = container.read(gameProvider);
       if (gameState.roomId == null) {
@@ -112,10 +118,10 @@ class QuizBattleApp extends ConsumerWidget {
       brightness: Brightness.dark,
       scaffoldBackgroundColor: const Color(0xFF0D0D1A),
       colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xFFE94560),
+        seedColor: const Color(0xFFC96442),
         brightness: Brightness.dark,
         surface: const Color(0xFF1A1A2E),
-        primary: const Color(0xFFE94560),
+        primary: const Color(0xFFC96442),
         secondary: const Color(0xFFFFB830),
       ),
       textTheme: const TextTheme(
@@ -135,7 +141,7 @@ class QuizBattleApp extends ConsumerWidget {
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFFE94560),
+          backgroundColor: const Color(0xFFC96442),
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 16),
           shape: RoundedRectangleBorder(

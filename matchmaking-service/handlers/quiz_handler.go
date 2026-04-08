@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"sync"
@@ -28,19 +29,29 @@ import (
 // gameRoom holds all active subscriber channels for one room plus
 // a sync.Once so the game loop starts exactly once.
 type gameRoom struct {
-	mu        sync.Mutex
-	subs      []chan *quiz.GameEvent
-	startOnce sync.Once
+	mu          sync.Mutex
+	subs        []chan *quiz.GameEvent
+	connected   map[string]bool // tracks stream subscriptions (includes spectators)
+	active      map[string]bool // tracks who is actively playing (not forfeited)
+	startOnce   sync.Once
 	totalRounds int
 }
 
-func (r *gameRoom) addSub(ch chan *quiz.GameEvent) {
+func (r *gameRoom) addSub(ch chan *quiz.GameEvent, userID string) {
 	r.mu.Lock()
 	r.subs = append(r.subs, ch)
+	if r.connected == nil {
+		r.connected = make(map[string]bool)
+	}
+	if r.active == nil {
+		r.active = make(map[string]bool)
+	}
+	r.connected[userID] = true
+	r.active[userID] = true
 	r.mu.Unlock()
 }
 
-func (r *gameRoom) removeSub(ch chan *quiz.GameEvent) {
+func (r *gameRoom) removeSub(ch chan *quiz.GameEvent, userID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	updated := r.subs[:0]
@@ -50,15 +61,55 @@ func (r *gameRoom) removeSub(ch chan *quiz.GameEvent) {
 		}
 	}
 	r.subs = updated
+	delete(r.connected, userID)
+	delete(r.active, userID)
+}
+
+// markForfeited removes a player from active but keeps their stream subscription.
+func (r *gameRoom) markForfeited(userID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.active, userID)
+	log.Printf("👋 Player %s forfeited (still spectating)", userID)
+}
+
+// activeCount returns the number of players still actively playing.
+func (r *gameRoom) activeCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.active)
+}
+
+// lastActiveUserID returns the userID of the sole remaining active player.
+func (r *gameRoom) lastActiveUserID() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for uid := range r.active {
+		return uid
+	}
+	return ""
 }
 
 func (r *gameRoom) broadcast(event *quiz.GameEvent) {
+	// Critical events (RoundResult, MatchEnd) must never be dropped.
+	// TimerSync can be dropped safely — clients have their own countdown.
+	critical := event.GetRoundResult() != nil || event.GetMatchEnd() != nil || event.GetQuestion() != nil || event.GetLeaderboard() != nil
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, ch := range r.subs {
-		select {
-		case ch <- event:
-		default: // drop for slow consumers — they'll catch up via TimerSync
+		if critical {
+			// Blocking send with timeout — ensure delivery
+			select {
+			case ch <- event:
+			case <-time.After(3 * time.Second):
+				log.Printf("⚠️  Critical event dropped for slow subscriber (channel full)")
+			}
+		} else {
+			select {
+			case ch <- event:
+			default: // drop TimerSync for slow consumers
+			}
 		}
 	}
 }
@@ -199,8 +250,19 @@ func (h *QuizServiceHandler) GetRoomQuestions(ctx context.Context, req *quiz.Roo
 // processes it, validates against MongoDB, and updates the leaderboard.
 
 func (h *QuizServiceHandler) SubmitAnswer(ctx context.Context, req *quiz.AnswerRequest) (*quiz.AnswerAck, error) {
-	if req.RoomId == "" || req.UserId == "" || req.QuestionId == "" {
-		return nil, status.Error(codes.InvalidArgument, "room_id, user_id, and question_id are required")
+	if req.RoomId == "" || req.UserId == "" {
+		return nil, status.Error(codes.InvalidArgument, "room_id and user_id are required")
+	}
+
+	// answer_index = -1 signals a forfeit — mark player as inactive
+	if req.AnswerIndex == -1 {
+		room := h.hub.getOrCreate(req.RoomId, 0)
+		room.markForfeited(req.UserId)
+		return &quiz.AnswerAck{Received: true, Message: "Forfeited"}, nil
+	}
+
+	if req.QuestionId == "" {
+		return nil, status.Error(codes.InvalidArgument, "question_id is required")
 	}
 
 	// Fetch the round start time stored by RunRound for response-time calculation.
@@ -261,10 +323,10 @@ func (h *QuizServiceHandler) StreamGameEvents(req *quiz.StreamRequest, stream gr
 
 	room := h.hub.getOrCreate(roomID, totalRounds)
 
-	// Subscribe with a buffered channel (buffer = 2× totalRounds to absorb bursts)
-	ch := make(chan *quiz.GameEvent, totalRounds*2+50)
-	room.addSub(ch)
-	defer room.removeSub(ch)
+	// Buffer must handle worst case: ~35 events/round (question + 30 timersync + result + leaderboard + matchend)
+	ch := make(chan *quiz.GameEvent, totalRounds*40)
+	room.addSub(ch, req.UserId)
+	defer room.removeSub(ch, req.UserId)
 
 	log.Printf("📺 Player %s subscribed to room %s game stream", req.UserId, roomID)
 
@@ -311,16 +373,53 @@ func (h *QuizServiceHandler) runGameLoop(roomID string, room *gameRoom) {
 
 	ctx := context.Background()
 
+	var autoWinnerID string // set if match ends early due to disconnections
+
 	for round := 1; round <= room.totalRounds; round++ {
-		log.Printf("🎯 Room %s: starting round %d/%d", roomID, round, room.totalRounds)
+		// ── Check before each round: end match if <= 1 active player
+		active := room.activeCount()
+		if active == 0 {
+			log.Printf("🏁 Room %s: no active players — ending match", roomID)
+			break
+		}
+		if active == 1 {
+			autoWinnerID = room.lastActiveUserID()
+			log.Printf("🏆 Room %s: only 1 active player — %s wins by default", roomID, autoWinnerID)
+			break
+		}
+
+		log.Printf("🎯 Room %s: starting round %d/%d (%d active players)", roomID, round, room.totalRounds, active)
 
 		broadcastFn := func(event *quiz.GameEvent) {
 			room.broadcast(event)
 		}
 
-		if err := h.quizSvc.RunRound(ctx, roomID, round, broadcastFn); err != nil {
+		roundInfo, err := h.quizSvc.RunRound(ctx, roomID, round, broadcastFn, room.activeCount)
+		if err != nil {
 			log.Printf("❌ RunRound failed room=%s round=%d: %v", roomID, round, err)
 			return
+		}
+
+		// Check again after round — players may have forfeited mid-round
+		if room.activeCount() == 0 {
+			log.Printf("🏁 Room %s: no active players after round %d — ending match", roomID, round)
+			break
+		}
+		if room.activeCount() == 1 {
+			autoWinnerID = room.lastActiveUserID()
+			log.Printf("🏆 Room %s: 1 active player after round %d — %s wins by default", roomID, round, autoWinnerID)
+			// Still broadcast this round's result before ending
+		}
+
+		// Small delay so scoring consumer can finish before we read leaderboard
+		time.Sleep(1 * time.Second)
+
+		// ── Broadcast RoundResult with correct answer ──
+		roundResult, err := h.buildRoundResultEvent(roomID, round, roundInfo)
+		if err != nil {
+			log.Printf("⚠️  buildRoundResult room=%s round=%d: %v", roomID, round, err)
+		} else {
+			room.broadcast(roundResult)
 		}
 
 		// After each round: fetch and broadcast the updated leaderboard
@@ -331,19 +430,127 @@ func (h *QuizServiceHandler) runGameLoop(roomID string, room *gameRoom) {
 			room.broadcast(scores)
 		}
 
-		// Brief between-round pause (show leaderboard to players)
-		if round < room.totalRounds {
-			time.Sleep(5 * time.Second)
+		// If auto-winner was set mid-round, end now (don't wait 5s for next round)
+		if autoWinnerID != "" {
+			time.Sleep(2 * time.Second) // brief pause to show last result
+			break
 		}
+
+		// Pause to show leaderboard + correct answer before next round
+		time.Sleep(5 * time.Second)
 	}
 
-	// All rounds done — broadcast MatchEnd
-	matchEnd, err := h.buildMatchEndEvent(roomID, room.totalRounds)
+	// All rounds done (or early end) — broadcast MatchEnd
+	matchEnd, err := h.buildMatchEndEvent(roomID, room.totalRounds, autoWinnerID)
 	if err != nil {
 		log.Printf("⚠️  buildMatchEnd room=%s: %v", roomID, err)
 		return
 	}
 	room.broadcast(matchEnd)
+
+	// Update player ratings in MongoDB based on XP earned
+	h.updatePlayerRatings(matchEnd)
+
+	// Give clients time to receive MatchEnd before closeAll() in defer
+	time.Sleep(2 * time.Second)
+}
+
+func (h *QuizServiceHandler) buildRoundResultEvent(roomID string, roundNum int, info *RoundInfo) (*quiz.GameEvent, error) {
+	scores, err := h.buildPlayerScores(roomID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Find fastest CORRECT answerer for this round
+	fastestUserID, fastestUsername := h.findFastestCorrectAnswer(roomID, roundNum, info.CorrectIndex)
+
+	return &quiz.GameEvent{
+		Event: &quiz.GameEvent_RoundResult{
+			RoundResult: &quiz.RoundResult{
+				RoundNumber:       int32(roundNum),
+				QuestionId:        info.QuestionID,
+				CorrectIndex:      int32(info.CorrectIndex),
+				Scores:            scores,
+				FastestUserId:     fastestUserID,
+				CorrectAnswerText: info.CorrectAnswerText,
+				FastestUsername:    fastestUsername,
+			},
+		},
+	}, nil
+}
+
+// findFastestCorrectAnswer checks the answers hash for this round and finds who
+// answered correctly. It then cross-references with response times to find the fastest.
+// Returns empty strings if no one answered correctly.
+func (h *QuizServiceHandler) findFastestCorrectAnswer(roomID string, roundNum int, correctIndex int) (userID, username string) {
+	conn := h.redisPool.Get()
+	defer conn.Close()
+
+	// Get all answers for this round: {userId: answerIndex, ...}
+	answersKey := fmt.Sprintf("room:%s:answers:%d", roomID, roundNum)
+	answers, err := goredis.StringMap(conn.Do("HGETALL", answersKey))
+	if err != nil || len(answers) == 0 {
+		return "", ""
+	}
+
+	// Get response times: {userId: totalMs, ...}
+	sumKey := fmt.Sprintf("room:%s:response_sum", roomID)
+	countKey := fmt.Sprintf("room:%s:response_count", roomID)
+
+	// Collect userIDs who answered correctly
+	var correctUsers []string
+	for uid, ansStr := range answers {
+		var idx int
+		fmt.Sscanf(ansStr, "%d", &idx)
+		if idx == correctIndex {
+			correctUsers = append(correctUsers, uid)
+		}
+	}
+
+	if len(correctUsers) == 0 {
+		return "", "" // no one got it right
+	}
+
+	// If only one correct, that's the fastest
+	if len(correctUsers) == 1 {
+		uid := correctUsers[0]
+		name := h.getUsernameFromRedis(conn, roomID, uid)
+		return uid, name
+	}
+
+	// Multiple correct — find the one with lowest avg response time
+	// (response_sum / response_count gives avg, lower = faster)
+	bestUID := correctUsers[0]
+	bestAvg := int64(999999999)
+	for _, uid := range correctUsers {
+		sum, _ := goredis.Int64(conn.Do("HGET", sumKey, uid))
+		cnt, _ := goredis.Int64(conn.Do("HGET", countKey, uid))
+		if cnt > 0 {
+			avg := sum / cnt
+			if avg < bestAvg {
+				bestAvg = avg
+				bestUID = uid
+			}
+		}
+	}
+
+	name := h.getUsernameFromRedis(conn, roomID, bestUID)
+	return bestUID, name
+}
+
+func (h *QuizServiceHandler) getUsernameFromRedis(conn goredis.Conn, roomID, userID string) string {
+	playersKey := fmt.Sprintf("room:%s:players", roomID)
+	raw, err := goredis.Bytes(conn.Do("HGET", playersKey, userID))
+	if err != nil || len(raw) == 0 {
+		return userID
+	}
+	var p struct {
+		Username string `json:"username"`
+	}
+	if jsonErr := json.Unmarshal(raw, &p); jsonErr == nil && p.Username != "" {
+		return p.Username
+	}
+	return userID
 }
 
 // ─────────────────────────────────────────
@@ -400,14 +607,30 @@ func (h *QuizServiceHandler) buildLeaderboardEvent(roomID string, roundNum int) 
 	}, nil
 }
 
-func (h *QuizServiceHandler) buildMatchEndEvent(roomID string, totalRounds int) (*quiz.GameEvent, error) {
+// buildMatchEndEvent constructs the MatchEnd event. If autoWinnerID is non-empty,
+// that player wins regardless of score (last player standing).
+func (h *QuizServiceHandler) buildMatchEndEvent(roomID string, totalRounds int, autoWinnerID string) (*quiz.GameEvent, error) {
 	scores, err := h.buildPlayerScores(roomID)
 	if err != nil {
 		return nil, err
 	}
 
 	var winnerUserID, winnerUsername string
-	if len(scores) > 0 {
+
+	if autoWinnerID != "" {
+		// Last player standing wins by default
+		winnerUserID = autoWinnerID
+		for _, s := range scores {
+			if s.UserId == autoWinnerID {
+				winnerUsername = s.Username
+				break
+			}
+		}
+		if winnerUsername == "" {
+			winnerUsername = autoWinnerID
+		}
+	} else if len(scores) > 0 {
+		// Normal end — highest score wins
 		winnerUserID = scores[0].UserId
 		winnerUsername = scores[0].Username
 	}
@@ -415,12 +638,47 @@ func (h *QuizServiceHandler) buildMatchEndEvent(roomID string, totalRounds int) 
 	return &quiz.GameEvent{
 		Event: &quiz.GameEvent_MatchEnd{
 			MatchEnd: &quiz.MatchEnd{
-				RoomId:          roomID,
-				WinnerUserId:    winnerUserID,
-				WinnerUsername:  winnerUsername,
-				TotalRounds:     int32(totalRounds),
-				FinalScores:     scores,
+				RoomId:         roomID,
+				WinnerUserId:   winnerUserID,
+				WinnerUsername: winnerUsername,
+				TotalRounds:    int32(totalRounds),
+				FinalScores:    scores,
 			},
 		},
 	}, nil
+}
+
+// updatePlayerRatings bumps each player's rating in MongoDB by their match score.
+// XP = score earned during the match (base points + speed bonus).
+func (h *QuizServiceHandler) updatePlayerRatings(matchEndEvent *quiz.GameEvent) {
+	me := matchEndEvent.GetMatchEnd()
+	if me == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	users := h.mongoDB.Collection("users")
+	for _, ps := range me.FinalScores {
+		if ps.Score <= 0 {
+			continue
+		}
+		oid, err := primitive.ObjectIDFromHex(ps.UserId)
+		if err != nil {
+			// userId might not be a valid ObjectID (legacy)
+			log.Printf("⚠️  updateRatings: invalid userId %s: %v", ps.UserId, err)
+			continue
+		}
+		result, err := users.UpdateByID(ctx, oid, bson.M{
+			"$inc": bson.M{"rating": int(ps.Score)},
+		})
+		if err != nil {
+			log.Printf("⚠️  updateRatings: user %s: %v", ps.UserId, err)
+			continue
+		}
+		if result.ModifiedCount > 0 {
+			log.Printf("📈 Rating updated — user: %s (+%d)", ps.Username, ps.Score)
+		}
+	}
 }
