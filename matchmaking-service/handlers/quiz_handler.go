@@ -373,7 +373,8 @@ func (h *QuizServiceHandler) runGameLoop(roomID string, room *gameRoom) {
 
 	ctx := context.Background()
 
-	var autoWinnerID string // set if match ends early due to disconnections
+	var autoWinnerID string       // set if match ends early due to disconnections
+	var playedQuestionIDs []string // track question IDs for match_history
 
 	for round := 1; round <= room.totalRounds; round++ {
 		// ── Check before each round: end match if <= 1 active player
@@ -399,6 +400,7 @@ func (h *QuizServiceHandler) runGameLoop(roomID string, room *gameRoom) {
 			log.Printf("❌ RunRound failed room=%s round=%d: %v", roomID, round, err)
 			return
 		}
+		playedQuestionIDs = append(playedQuestionIDs, roundInfo.QuestionID)
 
 		// Check again after round — players may have forfeited mid-round
 		if room.activeCount() == 0 {
@@ -450,6 +452,9 @@ func (h *QuizServiceHandler) runGameLoop(roomID string, room *gameRoom) {
 
 	// Update player ratings in MongoDB based on XP earned
 	h.updatePlayerRatings(matchEnd)
+
+	// Save played questions to match_history so they're excluded next time
+	h.saveMatchHistory(matchEnd, playedQuestionIDs)
 
 	// Give clients time to receive MatchEnd before closeAll() in defer
 	time.Sleep(2 * time.Second)
@@ -681,4 +686,39 @@ func (h *QuizServiceHandler) updatePlayerRatings(matchEndEvent *quiz.GameEvent) 
 			log.Printf("📈 Rating updated — user: %s (+%d)", ps.Username, ps.Score)
 		}
 	}
+}
+
+// saveMatchHistory writes played question IDs to match_history so they're
+// excluded from future matches for these players.
+func (h *QuizServiceHandler) saveMatchHistory(matchEndEvent *quiz.GameEvent, questionIDs []string) {
+	me := matchEndEvent.GetMatchEnd()
+	if me == nil || len(questionIDs) == 0 {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Build players array matching the schema fetchSeenQuestionIDs expects
+	type playerRef struct {
+		UserID string `bson:"userId"`
+	}
+	players := make([]playerRef, len(me.FinalScores))
+	for i, ps := range me.FinalScores {
+		players[i] = playerRef{UserID: ps.UserId}
+	}
+
+	doc := bson.M{
+		"players":     players,
+		"questionIds": questionIDs,
+		"roomId":      me.RoomId,
+		"createdAt":   time.Now(),
+	}
+
+	_, err := h.mongoDB.Collection("match_history").InsertOne(ctx, doc)
+	if err != nil {
+		log.Printf("⚠️  saveMatchHistory: %v", err)
+		return
+	}
+	log.Printf("📝 Match history saved — %d questions for %d players", len(questionIDs), len(players))
 }
