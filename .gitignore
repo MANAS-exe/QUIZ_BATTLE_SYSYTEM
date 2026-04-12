@@ -20,3 +20,4 @@ flutter-app/.packages
 
 # Docker
 mongo-data/
+android/app/google-services.json
