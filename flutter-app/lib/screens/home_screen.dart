@@ -103,6 +103,49 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         _PremiumUpsellCard(auth: auth),
                         const SizedBox(height: 20),
                       ],
+                      // Tournament card — premium feature teaser
+                      GestureDetector(
+                        onTap: () => context.pushNamed('tournaments'),
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [const Color(0xFF1A1A2E), appCoral.withValues(alpha: 0.1)],
+                            ),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: appCoral.withValues(alpha: 0.25)),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 44, height: 44,
+                                decoration: BoxDecoration(
+                                  color: appCoral.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(Icons.emoji_events_rounded, color: appCoral, size: 24),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Tournaments',
+                                        style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
+                                    const SizedBox(height: 2),
+                                    Text(auth.isEffectivelyPremium
+                                        ? 'Weekly & special events available'
+                                        : 'Go Premium to compete',
+                                        style: TextStyle(color: Colors.white38, fontSize: 12)),
+                                  ],
+                                ),
+                              ),
+                              Icon(Icons.chevron_right_rounded, color: Colors.white24, size: 22),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
                       _StreakCard(auth: auth),
                       const SizedBox(height: 20),
                       if (auth.referralCode != null) ...[
@@ -155,9 +198,11 @@ class _TopBar extends StatelessWidget {
               Text(
                 _greeting(),
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.45),
+                  color: Colors.white.withValues(alpha: 0.5),
                   fontSize: 13,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w400,
+                  fontStyle: FontStyle.italic,
+                  letterSpacing: 0.5,
                 ),
               ),
               const SizedBox(height: 2),

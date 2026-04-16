@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -209,8 +210,9 @@ func (h *WebhookHandler) handlePaymentCaptured(w http.ResponseWriter, r *http.Re
 
 	// Update users collection: set premium=true
 	usersColl := h.db.Collection("users")
+	userOID, _ := primitive.ObjectIDFromHex(paymentDoc.UserID)
 	_, err = usersColl.UpdateOne(ctx,
-		bson.M{"_id": paymentDoc.UserID},
+		bson.M{"_id": userOID},
 		bson.M{"$set": bson.M{"premium": true}},
 	)
 	if err != nil {

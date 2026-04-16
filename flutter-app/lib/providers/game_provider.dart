@@ -269,6 +269,16 @@ class GameNotifier extends StateNotifier<GameState> {
   }
 
   void _onQuestion(QuestionBroadcastEvent e) {
+    // Reconnect catch-up guard: the server re-sends currentQuestion to late-joiners.
+    // If we're already showing this exact round/question (e.g. after a brief disconnect),
+    // ignore it — don't clear the user's selected answer or restart the countdown.
+    if (state.phase == MatchPhase.inRound &&
+        state.currentRound == e.roundNumber &&
+        state.currentQuestion?.questionId == e.question.questionId) {
+      debugPrint('[GameProvider] _onQuestion: catch-up duplicate for round ${e.roundNumber}, skipping');
+      return;
+    }
+
     _countdownTimer?.cancel();
     _matchStartedAt ??= DateTime.now(); // track match start (first question)
     final totalSecs = (e.question.timeLimitMs / 1000).round();

@@ -79,14 +79,35 @@ class _MatchmakingScreenState extends ConsumerState<MatchmakingScreen>
     ref.invalidate(matchmakingStreamProvider(_userId));
     setState(() => _searching = true);
     _startCountdown();
-    _joinMatchmaking();
+    // Delay joinMatchmaking by one frame so the stream provider rebuilds first,
+    // ensuring SubscribeToMatch is established on the server BEFORE JoinMatchmaking
+    // fires. Without this delay, the JoinMatchmaking broadcast arrives before the
+    // player's subscription channel is registered, so they never see themselves.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _joinMatchmaking());
   }
 
-  void _joinMatchmaking() {
+  Future<void> _joinMatchmaking() async {
     final auth = ref.read(authProvider);
     final username = auth.username ?? 'Player';
     ref.read(gameProvider.notifier).setUser(_userId, username);
-    ref.read(gameServiceProvider).joinMatchmaking(_userId, username, auth.rating.toDouble());
+    try {
+      await ref.read(gameServiceProvider).joinMatchmaking(_userId, username, auth.rating.toDouble());
+    } catch (e) {
+      if (!mounted) return;
+      // Cancel the search UI and show the error to the user
+      _countdownTimer?.cancel();
+      setState(() => _searching = false);
+      final msg = e.toString().contains('Daily free limit')
+          ? 'Daily limit reached (5/5 games). Come back tomorrow or upgrade to Premium!'
+          : 'Could not join matchmaking. Please try again.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(msg),
+          backgroundColor: const Color(0xFFE74C3C),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
   }
 
   void _setupAnimations() {
@@ -112,6 +133,9 @@ class _MatchmakingScreenState extends ConsumerState<MatchmakingScreen>
   }
 
   void _startCountdown() {
+    // Cancel any existing timer first (prevents double-tick on re-entry)
+    _countdownTimer?.cancel();
+
     // Reset timer
     ref.read(waitTimerProvider.notifier).state = _matchmakingTimeout;
 
@@ -415,7 +439,12 @@ class _MatchmakingScreenState extends ConsumerState<MatchmakingScreen>
             ),
           ).animate().fadeIn(delay: 300.ms, duration: 400.ms).slideY(begin: 0.1, end: 0),
 
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
+
+          // ── Daily quota card ──────────────────────────────────
+          _buildDailyQuotaCard(auth),
+
+          const SizedBox(height: 16),
 
           // ── Start button ──────────────────────────────────────
           Padding(
@@ -446,6 +475,156 @@ class _MatchmakingScreenState extends ConsumerState<MatchmakingScreen>
         ],
       ),
     );
+  }
+
+  // ── Daily quota card ─────────────────────────────────────
+
+  /// Returns the local time when midnight UTC occurs (i.e. when quota resets).
+  String _quotaResetTime() {
+    final now = DateTime.now();
+    // Next midnight UTC in local time
+    final nextMidnightUtc = DateTime.utc(now.toUtc().year, now.toUtc().month, now.toUtc().day + 1);
+    final local = nextMidnightUtc.toLocal();
+    final h = local.hour.toString().padLeft(2, '0');
+    final m = local.minute.toString().padLeft(2, '0');
+    return '$h:$m';
+  }
+
+  Widget _buildDailyQuotaCard(AuthState auth) {
+    if (auth.isPremium) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1A1A2E),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFFFB830).withValues(alpha: 0.3)),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.all_inclusive_rounded, color: Color(0xFFFFB830), size: 18),
+              SizedBox(width: 10),
+              Text('Unlimited matches today',
+                  style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600)),
+              Spacer(),
+              Text('PREMIUM', style: TextStyle(color: Color(0xFFFFB830), fontSize: 11, fontWeight: FontWeight.w800)),
+            ],
+          ),
+        ),
+      ).animate().fadeIn(delay: 350.ms, duration: 400.ms);
+    }
+
+    final used = auth.dailyQuizUsed;
+    final bonus = auth.bonusGamesRemaining;
+    final freeLeft = (kFreeQuotaPerDay - used).clamp(0, kFreeQuotaPerDay);
+    final totalLeft = freeLeft + bonus;
+    final exhausted = totalLeft <= 0;
+    final progress = used / kFreeQuotaPerDay;
+
+    final barColor = exhausted
+        ? const Color(0xFFE74C3C)
+        : freeLeft <= 1
+            ? const Color(0xFFFFB830)
+            : const Color(0xFF2ECC71);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A1A2E),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: exhausted
+                ? const Color(0xFFE74C3C).withValues(alpha: 0.4)
+                : Colors.white10,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  exhausted ? Icons.block_rounded : Icons.sports_esports_rounded,
+                  color: barColor,
+                  size: 16,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Today\'s Matches',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.75),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const Spacer(),
+                // Free games counter
+                RichText(
+                  text: TextSpan(
+                    children: [
+                      TextSpan(
+                        text: '$used',
+                        style: TextStyle(
+                          color: exhausted ? const Color(0xFFE74C3C) : Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      TextSpan(
+                        text: '/$kFreeQuotaPerDay',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.4),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (bonus > 0)
+                        TextSpan(
+                          text: ' +$bonus bonus',
+                          style: const TextStyle(
+                            color: Color(0xFFFFB830),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            // Progress bar
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: progress.clamp(0.0, 1.0),
+                minHeight: 6,
+                backgroundColor: Colors.white10,
+                valueColor: AlwaysStoppedAnimation<Color>(barColor),
+              ),
+            ),
+            if (exhausted) ...[
+              const SizedBox(height: 8),
+              Text(
+                bonus > 0
+                    ? '$bonus bonus game${bonus == 1 ? '' : 's'} remaining'
+                    : 'Limit reached — resets at ${_quotaResetTime()} or upgrade to Premium',
+                style: TextStyle(
+                  color: bonus > 0
+                      ? const Color(0xFFFFB830)
+                      : const Color(0xFFE74C3C).withValues(alpha: 0.8),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    ).animate().fadeIn(delay: 350.ms, duration: 400.ms);
   }
 
   // ── Lobby avatar (Google photo or initial letter) ─────────

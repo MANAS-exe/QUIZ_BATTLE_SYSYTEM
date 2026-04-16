@@ -17,6 +17,9 @@ import (
 var publicMethods = map[string]bool{
 	"/quiz.AuthService/Register": true,
 	"/quiz.AuthService/Login":    true,
+	// gRPC server reflection — allows grpcurl/grpcui to introspect without a token
+	"/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo": true,
+	"/grpc.reflection.v1.ServerReflection/ServerReflectionInfo":      true,
 }
 
 type contextKey string
@@ -66,7 +69,8 @@ func AuthStreamInterceptor(
 	info *grpc.StreamServerInfo,
 	handler grpc.StreamHandler,
 ) error {
-	if publicMethods[info.FullMethod] {
+	// Allow gRPC server reflection unconditionally (contains "Reflection" in path)
+	if strings.Contains(info.FullMethod, "Reflection") || publicMethods[info.FullMethod] {
 		log.Printf("→ gRPC stream (public): %s", info.FullMethod)
 		return handler(srv, ss)
 	}

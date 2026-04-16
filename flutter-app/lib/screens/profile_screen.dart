@@ -53,6 +53,44 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                   color: Colors.white70, size: 20),
               onPressed: () => context.pop(),
             ),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.lock_reset_rounded, color: Colors.white70, size: 22),
+                tooltip: 'Change Password',
+                onPressed: () => _showChangePasswordDialog(context, ref),
+              ),
+              IconButton(
+                icon: const Icon(Icons.logout_rounded, color: Colors.white70, size: 22),
+                tooltip: 'Logout',
+                onPressed: () async {
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (_) => AlertDialog(
+                      backgroundColor: const Color(0xFF1A1A2E),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      title: const Text('Logout', style: TextStyle(color: Colors.white)),
+                      content: const Text('Are you sure you want to logout?',
+                          style: TextStyle(color: Colors.white70)),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          child: const Text('Cancel', style: TextStyle(color: Colors.white38)),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(true),
+                          child: Text('Logout', style: TextStyle(color: appCoral)),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirm == true && context.mounted) {
+                    await ref.read(authProvider.notifier).logout();
+                    if (context.mounted) context.go('/login');
+                  }
+                },
+              ),
+              const SizedBox(width: 4),
+            ],
             flexibleSpace: FlexibleSpaceBar(
               collapseMode: CollapseMode.pin,
               background: _ProfileHeader(auth: auth),
@@ -96,6 +134,81 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         ),
       ),
     );
+  }
+
+  Future<void> _showChangePasswordDialog(BuildContext context, WidgetRef ref) async {
+    final ctrl = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    String? error;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          backgroundColor: const Color(0xFF1A1A2E),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Change Password', style: TextStyle(color: Colors.white)),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: ctrl,
+                  obscureText: true,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    labelText: 'New Password',
+                    labelStyle: const TextStyle(color: Colors.white54),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Colors.white24),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: appCoral),
+                    ),
+                    errorText: error,
+                  ),
+                  validator: (v) => (v == null || v.length < 4)
+                      ? 'Minimum 4 characters'
+                      : null,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+            ),
+            TextButton(
+              onPressed: () async {
+                if (!formKey.currentState!.validate()) return;
+                final err = await ref
+                    .read(authProvider.notifier)
+                    .changePassword(ctrl.text.trim());
+                if (err == null) {
+                  if (ctx.mounted) Navigator.of(ctx).pop();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Password updated successfully'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  }
+                } else {
+                  setState(() => error = err);
+                }
+              },
+              child: Text('Update', style: TextStyle(color: appCoral)),
+            ),
+          ],
+        ),
+      ),
+    );
+    ctrl.dispose();
   }
 }
 
@@ -514,7 +627,7 @@ class _ProfileTab extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────
-// TAB 2 — LAST MATCH
+// TAB 2 — LAST MATCH (history)
 // ─────────────────────────────────────────
 
 class _LastMatchTab extends StatelessWidget {
@@ -523,14 +636,17 @@ class _LastMatchTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final lm = auth.lastMatch;
+    final history = auth.matchHistory;
+    // Premium users see up to 3 past matches; free users see only the latest.
+    final limit = auth.isEffectivelyPremium ? 3 : 1;
+    final matches = history.take(limit).toList();
 
-    if (lm == null) {
+    if (matches.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.sports_esports_outlined,
+            const Icon(Icons.sports_esports_outlined,
                 color: Colors.white12, size: 64),
             const SizedBox(height: 16),
             const Text(
@@ -547,72 +663,109 @@ class _LastMatchTab extends StatelessWidget {
       );
     }
 
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
+      itemCount: matches.length + (history.length > limit ? 1 : 0),
+      itemBuilder: (_, i) {
+        // Upgrade upsell row at the bottom for free users with more history
+        if (i == matches.length) {
+          return _UpgradeBanner(hiddenCount: history.length - limit);
+        }
+        final lm = matches[i];
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (matches.length > 1) ...[
+              _SectionLabel(i == 0 ? 'MOST RECENT' : 'MATCH ${i + 1}'),
+              const SizedBox(height: 8),
+            ],
+            _MatchHistoryCard(lm: lm, index: i),
+            if (i < matches.length - 1) const SizedBox(height: 24),
+          ],
+        );
+      },
+    );
+  }
+}
+
+// ── Single match card ──────────────────────────────────────────────────────
+
+class _MatchHistoryCard extends StatelessWidget {
+  final LastMatchData lm;
+  final int index;
+  const _MatchHistoryCard({required this.lm, required this.index});
+
+  @override
+  Widget build(BuildContext context) {
     final accuracy = lm.totalRounds > 0
         ? (lm.answersCorrect / lm.totalRounds * 100).round()
         : 0;
-    final acColor = accuracy >= 80
-        ? appGreen
-        : accuracy >= 50
-            ? appGold
-            : appRed;
+    final acColor =
+        accuracy >= 80 ? appGreen : accuracy >= 50 ? appGold : appRed;
+    final delay = Duration(milliseconds: 60 * index);
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
+    // Determine result state
+    final isNoWinner = lm.winnerUsername.isEmpty;
+    final resultColor = isNoWinner
+        ? Colors.white38
+        : lm.won
+            ? appGold
+            : appCoral;
+    final resultIcon = isNoWinner
+        ? Icons.block_rounded
+        : lm.won
+            ? Icons.emoji_events_rounded
+            : Icons.flag_rounded;
+    final resultTitle =
+        isNoWinner ? 'No winner' : (lm.won ? 'Victory' : 'Defeat');
+    final resultSubtitle = isNoWinner
+        ? 'Nobody answered correctly'
+        : lm.won
+            ? 'You won this match!'
+            : 'Winner: ${lm.winnerUsername}';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // ── Win / Loss banner ─────────────────────────────────────
+        // ── Win / Loss / No-winner banner ──────────────────────────
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: lm.won
-                  ? [
-                      appGold.withValues(alpha: 0.18),
-                      appGold.withValues(alpha: 0.06),
-                    ]
-                  : [
-                      appCoral.withValues(alpha: 0.15),
-                      appCoral.withValues(alpha: 0.05),
-                    ],
+              colors: [
+                resultColor.withValues(alpha: 0.18),
+                resultColor.withValues(alpha: 0.06),
+              ],
             ),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: lm.won
-                  ? appGold.withValues(alpha: 0.4)
-                  : appCoral.withValues(alpha: 0.3),
-            ),
+            border:
+                Border.all(color: resultColor.withValues(alpha: 0.4)),
           ),
           child: Row(
             children: [
-              Icon(
-                lm.won ? Icons.emoji_events_rounded : Icons.flag_rounded,
-                color: lm.won ? appGold : appCoral,
-                size: 40,
-              ),
+              Icon(resultIcon, color: resultColor, size: 40),
               const SizedBox(width: 14),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    lm.won ? 'Victory' : 'Defeat',
+                    resultTitle,
                     style: TextStyle(
-                      color: lm.won ? appGold : Colors.white,
+                      color: resultColor,
                       fontSize: 22,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
                   Text(
-                    lm.won
-                        ? 'You won this match!'
-                        : 'Winner: ${lm.winnerUsername}',
+                    resultSubtitle,
                     style: const TextStyle(
                         color: Colors.white54, fontSize: 13),
                   ),
                 ],
               ),
               const Spacer(),
-              // Rank badge
               Container(
                 width: 52,
                 height: 52,
@@ -635,13 +788,11 @@ class _LastMatchTab extends StatelessWidget {
               ),
             ],
           ),
-        ).animate().fadeIn(duration: 350.ms),
+        ).animate().fadeIn(delay: delay, duration: 350.ms),
 
-        const SizedBox(height: 20),
+        const SizedBox(height: 16),
 
-        // ── Key stats grid ────────────────────────────────────────
-        _SectionLabel('Performance'),
-        const SizedBox(height: 12),
+        // ── Key stats grid ─────────────────────────────────────────
         Row(
           children: [
             Expanded(
@@ -650,7 +801,7 @@ class _LastMatchTab extends StatelessWidget {
                     iconColor: appGold,
                     value: '${lm.score}',
                     label: 'Score',
-                    delay: 100.ms)),
+                    delay: delay + 60.ms)),
             const SizedBox(width: 12),
             Expanded(
                 child: _StatCard(
@@ -658,7 +809,7 @@ class _LastMatchTab extends StatelessWidget {
                     iconColor: appGreen,
                     value: '${lm.answersCorrect}/${lm.totalRounds}',
                     label: 'Correct',
-                    delay: 150.ms)),
+                    delay: delay + 100.ms)),
             const SizedBox(width: 12),
             Expanded(
                 child: _StatCard(
@@ -666,7 +817,7 @@ class _LastMatchTab extends StatelessWidget {
                     iconColor: appRed,
                     value: '${lm.maxStreak}',
                     label: 'Best Streak',
-                    delay: 200.ms)),
+                    delay: delay + 140.ms)),
           ],
         ),
 
@@ -708,7 +859,7 @@ class _LastMatchTab extends StatelessWidget {
               ),
             ],
           ),
-        ).animate().fadeIn(delay: 250.ms),
+        ).animate().fadeIn(delay: delay + 180.ms),
 
         const SizedBox(height: 12),
 
@@ -721,7 +872,7 @@ class _LastMatchTab extends StatelessWidget {
                     value:
                         '${(lm.avgResponseMs / 1000).toStringAsFixed(1)}s',
                     label: 'Avg Response',
-                    delay: 300.ms)),
+                    delay: delay + 220.ms)),
             const SizedBox(width: 12),
             Expanded(
                 child: _StatCard(
@@ -729,7 +880,7 @@ class _LastMatchTab extends StatelessWidget {
                     iconColor: Colors.white54,
                     value: _fmtDuration(lm.durationSeconds),
                     label: 'Duration',
-                    delay: 350.ms)),
+                    delay: delay + 260.ms)),
             const SizedBox(width: 12),
             Expanded(
                 child: _StatCard(
@@ -737,7 +888,7 @@ class _LastMatchTab extends StatelessWidget {
                     iconColor: appCoral,
                     value: '${lm.totalRounds}',
                     label: 'Rounds',
-                    delay: 400.ms)),
+                    delay: delay + 300.ms)),
           ],
         ),
       ],
@@ -755,6 +906,57 @@ class _LastMatchTab extends StatelessWidget {
     final m = s ~/ 60;
     final sec = s % 60;
     return m > 0 ? '${m}m ${sec}s' : '${s}s';
+  }
+}
+
+// ── Upgrade banner (shown to free users with hidden matches) ───────────────
+
+class _UpgradeBanner extends StatelessWidget {
+  final int hiddenCount;
+  const _UpgradeBanner({required this.hiddenCount});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(top: 20),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            appCoral.withValues(alpha: 0.18),
+            appCoral.withValues(alpha: 0.06),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: appCoral.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.lock_rounded, color: appCoral, size: 28),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$hiddenCount more match${hiddenCount > 1 ? 'es' : ''} hidden',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                const Text(
+                  'Upgrade to Premium to see your full match history',
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ).animate().fadeIn(delay: 200.ms, duration: 350.ms);
   }
 }
 
@@ -1544,7 +1746,7 @@ class _ReferralTabState extends ConsumerState<_ReferralTab> {
               child: _StatCard(
                 icon: Icons.monetization_on_rounded,
                 iconColor: appGold,
-                value: '${auth.totalReferralCoins + auth.pendingReferralCoins}',
+                value: '${auth.totalReferralCoins}',
                 label: 'Coins Earned',
                 delay: 200.ms,
               ),

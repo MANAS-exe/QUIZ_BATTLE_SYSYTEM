@@ -497,8 +497,9 @@ func (h *PaymentHandler) VerifyPayment(w http.ResponseWriter, r *http.Request) {
 
 	// Update users.premium = true (non-fatal)
 	usersColl := h.db.Collection("users")
+	userOID, _ := primitive.ObjectIDFromHex(userID)
 	if _, err = usersColl.UpdateOne(ctx,
-		bson.M{"_id": userID},
+		bson.M{"_id": userOID},
 		bson.M{"$set": bson.M{"premium": true}},
 	); err != nil {
 		log.Printf("VerifyPayment: warning — could not set premium flag for user %s: %v", userID, err)

@@ -1,8 +1,15 @@
-// seed creates 6 test users in MongoDB with pre-hashed passwords.
+// seed creates/resets test users in MongoDB with pre-hashed passwords.
 // Run: go run ./cmd/seed [MONGO_URI]
 //
 // All test users have password: speakx123
-// They span a range of ratings to exercise the matchmaking rating-based pool.
+// Uses upsert — if a user already exists their password is reset to speakx123
+// WITHOUT touching their rating or other fields.
+// This is intentional: run the seed whenever a dev user's password is unknown.
+//
+// Bot accounts:  alice, bob, charlie, diana, evan, fiona  (rating spread)
+// Dev accounts:  manas, manas1, manas2, manas3, manas4
+// Test accounts: e2e_alice, e2e_bob, demo_alice, demo_bob,
+//                audit_user1, audit2, audit3, grpctest
 package main
 
 import (
@@ -12,19 +19,10 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"golang.org/x/crypto/bcrypt"
 )
-
-type User struct {
-	ID           primitive.ObjectID `bson:"_id,omitempty"`
-	Username     string             `bson:"username"`
-	PasswordHash string             `bson:"password_hash"`
-	Rating       int                `bson:"rating"`
-	CreatedAt    time.Time          `bson:"created_at"`
-}
 
 func main() {
 	mongoURI := "mongodb://localhost:27017"
@@ -50,49 +48,76 @@ func main() {
 
 	testUsers := []struct {
 		username string
-		rating   int
+		rating   int // only used when creating a NEW user; existing users keep their rating
 	}{
+		// Bot accounts — span a wide rating range for matchmaking testing
 		{"alice", 1200},
 		{"bob", 1050},
 		{"charlie", 1380},
 		{"diana", 975},
 		{"evan", 1520},
 		{"fiona", 890},
+		// Dev accounts
+		{"manas", 1100},
+		{"manas1", 53140},
+		{"manas2", 53952},
+		{"manas3", 47004},
+		{"manas4", 1100},
+		// Test / demo / audit accounts
+		{"e2e_alice", 1000},
+		{"e2e_bob", 1000},
+		{"demo_alice", 1000},
+		{"demo_bob", 1000},
+		{"audit_user1", 1000},
+		{"audit2", 1000},
+		{"audit3", 1000},
+		{"grpctest", 1000},
 	}
 
-	// Hash once — reuse the same hash for all test users (password: speakx123).
+	// Hash once — reuse for all test users (password: speakx123).
 	hash, err := bcrypt.GenerateFromPassword([]byte("speakx123"), bcrypt.DefaultCost)
 	if err != nil {
 		log.Fatalf("❌ bcrypt: %v", err)
 	}
 
-	created, skipped := 0, 0
+	created, updated, failed := 0, 0, 0
 	for _, u := range testUsers {
-		user := User{
-			Username:     u.username,
-			PasswordHash: string(hash),
-			Rating:       u.rating,
-			CreatedAt:    time.Now(),
+		// Upsert: create if not exists, reset password_hash if already exists.
+		// This is intentional — re-running seed resets passwords to speakx123.
+		filter := bson.M{"username": u.username}
+		update := bson.M{
+			// Only reset password_hash for existing users — never overwrite rating.
+			"$set": bson.M{
+				"password_hash": string(hash),
+			},
+			// rating and created_at are set ONLY when the document is first created.
+			"$setOnInsert": bson.M{
+				"rating":     u.rating,
+				"created_at": time.Now(),
+			},
 		}
-
-		_, err := col.InsertOne(context.Background(), user)
+		opts := options.UpdateOptions{}
+		upsert := true
+		opts.Upsert = &upsert
+		res, err := col.UpdateOne(context.Background(), filter, update, &opts)
 		if err != nil {
-			// Duplicate username — unique index will reject it. That's fine on re-runs.
-			if mongo.IsDuplicateKeyError(err) {
-				log.Printf("⏭  Skipped %s (already exists)", u.username)
-				skipped++
-				continue
-			}
-			log.Printf("⚠️  Insert %s: %v", u.username, err)
+			log.Printf("⚠️  Upsert %s: %v", u.username, err)
+			failed++
 			continue
 		}
-		log.Printf("✅ Created user: %-10s rating: %d", u.username, u.rating)
-		created++
+		if res.UpsertedCount > 0 {
+			log.Printf("✅ Created user: %-10s rating: %d", u.username, u.rating)
+			created++
+		} else {
+			log.Printf("🔄 Reset password: %-10s (already existed)", u.username)
+			updated++
+		}
 	}
 
 	log.Printf("\n── Seed summary ──────────────")
 	log.Printf("  Created : %d", created)
-	log.Printf("  Skipped : %d (already existed)", skipped)
+	log.Printf("  Reset   : %d (password reset to speakx123)", updated)
+	log.Printf("  Failed  : %d", failed)
 	log.Printf("  Password: speakx123  (all test users)")
 
 	// Verify counts

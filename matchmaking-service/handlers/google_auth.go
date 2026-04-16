@@ -294,11 +294,13 @@ func (h *GoogleAuthHandler) upsertGoogleUser(ctx context.Context, info *googleTo
 	emailErr := h.users.FindOne(ctx, bson.M{"email": info.Email}).Decode(&emailUser)
 	if emailErr == nil {
 		// Link Google ID to existing account
-		h.users.UpdateOne(ctx, bson.M{"_id": emailUser.ID}, bson.M{"$set": bson.M{ //nolint:errcheck
+		if _, linkErr := h.users.UpdateOne(ctx, bson.M{"_id": emailUser.ID}, bson.M{"$set": bson.M{
 			"google_id":   info.Sub,
 			"picture_url": info.Picture,
 			"updated_at":  time.Now(),
-		}})
+		}}); linkErr != nil {
+			return nil, false, fmt.Errorf("link google to existing email account: %w", linkErr)
+		}
 		emailUser.PictureURL = info.Picture
 		return &emailUser, false, nil
 	}

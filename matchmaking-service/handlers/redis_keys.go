@@ -50,61 +50,56 @@ func PopulateUserRedisKeys(pool *goredis.Pool, mongoDB *mongo.Database, userID s
 		return
 	}
 
-	// ── Daily quota ──────────────────────────────────────────
+	// Single query to fetch all fields at once
 	usersColl := mongoDB.Collection("users")
-	var userDoc struct {
+	var doc struct {
 		DailyQuizUsed int    `bson:"daily_quiz_used"`
 		LastQuizDate  string `bson:"last_quiz_date"`
-	}
-	today := time.Now().UTC().Format("2006-01-02")
-	if err := usersColl.FindOne(ctx, bson.M{"_id": oid}).Decode(&userDoc); err == nil {
-		used := 0
-		if userDoc.LastQuizDate == today {
-			used = userDoc.DailyQuizUsed
-		}
-		remaining := 5 - used
-		if remaining < 0 {
-			remaining = 0
-		}
-		val := fmt.Sprintf("%d", remaining)
-		if plan == "premium" {
-			val = "unlimited"
-		}
-		quotaKey := fmt.Sprintf("user:%s:daily_quota", userID)
-		conn.Do("SET", quotaKey, val, "EX", 86400) //nolint:errcheck
-	}
-
-	// ── Streak ───────────────────────────────────────────────
-	var streakDoc struct {
 		CurrentStreak int    `bson:"current_streak"`
 		LongestStreak int    `bson:"longest_streak"`
 		LastLoginDate string `bson:"last_login_date"`
+		ReferralCode  string `bson:"referral_code"`
 	}
-	if err := usersColl.FindOne(ctx, bson.M{"_id": oid}).Decode(&streakDoc); err == nil {
-		streakKey := fmt.Sprintf("user:%s:streak", userID)
-		current := streakDoc.CurrentStreak
-		longest := streakDoc.LongestStreak
-		lastLogin := streakDoc.LastLoginDate
-		if lastLogin == "" {
-			lastLogin = today
-		}
-		if current == 0 {
-			current = 1 // first login today counts as streak 1
-		}
-		conn.Do("HSET", streakKey, //nolint:errcheck
-			"current", current,
-			"longest", longest,
-			"last_login", lastLogin,
-		)
+	today := time.Now().UTC().Format("2006-01-02")
+	if err := usersColl.FindOne(ctx, bson.M{"_id": oid}).Decode(&doc); err != nil {
+		log.Printf("⚠️  PopulateUserRedisKeys: user %s not found: %v", userID, err)
+		return
 	}
 
-	// ── Referral code ────────────────────────────────────────
-	var refDoc struct {
-		ReferralCode string `bson:"referral_code"`
+	// ── Daily quota ──────────────────────────────────────────
+	used := 0
+	if doc.LastQuizDate == today {
+		used = doc.DailyQuizUsed
 	}
-	if err := usersColl.FindOne(ctx, bson.M{"_id": oid}).Decode(&refDoc); err == nil && refDoc.ReferralCode != "" {
-		refKey := fmt.Sprintf("referral:code:%s", refDoc.ReferralCode)
-		conn.Do("SET", refKey, userID) //nolint:errcheck
+	remaining := 5 - used
+	if remaining < 0 {
+		remaining = 0
+	}
+	val := fmt.Sprintf("%d", remaining)
+	if plan == "premium" {
+		val = "unlimited"
+	}
+	conn.Do("SET", fmt.Sprintf("user:%s:daily_quota", userID), val, "EX", 86400) //nolint:errcheck
+
+	// ── Streak ───────────────────────────────────────────────
+	current := doc.CurrentStreak
+	longest := doc.LongestStreak
+	lastLogin := doc.LastLoginDate
+	if lastLogin == "" {
+		lastLogin = today
+	}
+	if current == 0 {
+		current = 1
+	}
+	conn.Do("HSET", fmt.Sprintf("user:%s:streak", userID), //nolint:errcheck
+		"current", current,
+		"longest", longest,
+		"last_login", lastLogin,
+	)
+
+	// ── Referral code ────────────────────────────────────────
+	if doc.ReferralCode != "" {
+		conn.Do("SET", fmt.Sprintf("referral:code:%s", doc.ReferralCode), userID) //nolint:errcheck
 	}
 
 	log.Printf("📊 Redis keys populated for user %s (plan=%s)", userID, plan)

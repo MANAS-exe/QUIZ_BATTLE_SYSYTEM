@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quiz Battle — Demo Presentation</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #0a0a1a; color: #e0e0e0; }
+
+  .slide { min-height: 100vh; padding: 60px 80px; display: flex; flex-direction: column; justify-content: center; border-bottom: 1px solid #1a1a3e; }
+
+  h1 { font-size: 3em; color: #ff7043; margin-bottom: 10px; }
+  h2 { font-size: 2.2em; color: #ffb74d; margin-bottom: 30px; }
+  h3 { font-size: 1.5em; color: #ff7043; margin: 25px 0 12px; }
+
+  p, li { font-size: 1.15em; line-height: 1.8; color: #ccc; }
+  ul { padding-left: 30px; }
+  li { margin-bottom: 8px; }
+
+  .highlight { color: #ffb74d; font-weight: 700; }
+  .tech { color: #4fc3f7; }
+  .green { color: #66bb6a; }
+  .red { color: #ef5350; }
+  .dim { color: #777; font-size: 0.85em; }
+
+  code { background: #1a1a3e; color: #4fc3f7; padding: 2px 8px; border-radius: 4px; font-size: 0.95em; }
+  pre { background: #0d0d2b; border: 1px solid #1a1a3e; border-radius: 10px; padding: 20px; margin: 15px 0; overflow-x: auto; font-size: 0.95em; line-height: 1.6; color: #aaa; }
+
+  table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+  th { background: #1a1a3e; color: #ffb74d; text-align: left; padding: 12px 16px; font-size: 1em; }
+  td { padding: 10px 16px; border-bottom: 1px solid #1a1a3e; font-size: 0.95em; }
+  tr:hover { background: #111130; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 25px; margin: 20px 0; }
+  .card { background: #111130; border: 1px solid #1a1a3e; border-radius: 12px; padding: 25px; }
+  .card h3 { margin-top: 0; }
+
+  .badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 0.8em; font-weight: 700; }
+  .badge-done { background: #1b5e20; color: #66bb6a; }
+  .badge-tech { background: #0d47a1; color: #4fc3f7; }
+
+  .speaker-note { background: #1a0a00; border-left: 4px solid #ff7043; padding: 15px 20px; margin: 20px 0; border-radius: 0 8px 8px 0; }
+  .speaker-note::before { content: "SPEAKER NOTE: "; color: #ff7043; font-weight: 700; font-size: 0.85em; }
+  .speaker-note p { font-size: 0.95em; color: #cc8866; }
+
+  .toc { columns: 2; column-gap: 40px; }
+  .toc li { font-size: 1.05em; }
+
+  .flow { display: flex; align-items: center; gap: 10px; margin: 10px 0; flex-wrap: wrap; }
+  .flow-step { background: #1a1a3e; padding: 8px 16px; border-radius: 8px; font-size: 0.9em; }
+  .flow-arrow { color: #ff7043; font-size: 1.2em; }
+
+  @media print {
+    .slide { page-break-after: always; min-height: auto; padding: 30px; }
+    .speaker-note { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== SLIDE 1: TITLE ===== -->
+<div class="slide" style="text-align: center; justify-content: center;">
+  <h1 style="font-size: 4em;">Quiz Battle</h1>
+  <p style="font-size: 1.5em; color: #ffb74d; margin: 20px 0;">Real-Time Multiplayer Quiz Game</p>
+  <p style="font-size: 1.1em; margin-top: 30px;">
+    <span class="tech">5 Go Microservices</span> &bull;
+    <span class="tech">Flutter</span> &bull;
+    <span class="tech">gRPC</span> &bull;
+    <span class="tech">MongoDB</span> &bull;
+    <span class="tech">Redis</span> &bull;
+    <span class="tech">RabbitMQ</span> &bull;
+    <span class="tech">FCM</span>
+  </p>
+  <p class="dim" style="margin-top: 40px;">Manas Kumar</p>
+
+  <div class="speaker-note">
+    <p>Start with energy. "Quiz Battle is a real-time multiplayer quiz game — think Kahoot meets competitive gaming. Two players match up, answer timed questions, and compete on a live leaderboard. The entire system runs on 5 independent microservices communicating via gRPC and RabbitMQ."</p>
+  </div>
+</div>
+
+<!-- ===== SLIDE 2: AGENDA ===== -->
+<div class="slide">
+  <h2>Agenda</h2>
+  <ol class="toc" style="padding-left: 25px;">
+    <li>Architecture Overview &amp; Why Microservices</li>
+    <li>Live Demo — Full Game Flow</li>
+    <li>Service Deep Dive (5 services)</li>
+    <li>Race Condition Prevention (Redis Lua, Locks, SETNX)</li>
+    <li>Feature Walkthrough (Phase 2)</li>
+    <li>Data Flow — RabbitMQ &amp; Redis</li>
+    <li>MongoDB Data — Live in Compass</li>
+    <li>Push Notifications (FCM)</li>
+    <li>Bugs &amp; How We Fixed Them</li>
+    <li>Q&amp;A</li>
+  </ol>
+
+  <div class="speaker-note">
+    <p>"Let me walk you through the agenda. I'll start with the big picture, then do a LIVE demo of two players battling each other, then dive into each service, show you the data flowing through RabbitMQ and Redis in real time, and finally walk through the hardest bugs I encountered."</p>
+  </div>
+</div>
+
+<!-- ===== SLIDE 3: ARCHITECTURE ===== -->
+<div class="slide">
+  <h2>System Architecture</h2>
+  <pre>
+                        Flutter App (iOS / Android)
+                   |           |           |         |         |
+            gRPC :50051   gRPC :50052   gRPC :50053  HTTP :8081  FCM
+                   |           |           |         |         |
+        Matchmaking      Quiz Engine     Scoring    Payment   Notification
+        Service          Service         Service    Service   Worker
+            |                |              |
+            +------pub----->|              |<------sub--------+
+            | match.created  |              | answer.submitted |
+            +----------------+--------------+-----------------+
+                             |              |
+                       +-----+-----+--------+-----+
+                       |           |               |
+                    MongoDB      Redis          RabbitMQ
+  </pre>
+
+  <div class="speaker-note">
+    <p>"Here's the full architecture. 5 Go services, each running independently. The Flutter app talks to 3 of them via gRPC streaming and 1 via HTTP. The 5th is a background worker that sends push notifications. All inter-service communication goes through RabbitMQ — no direct service-to-service calls."</p>
+  </div>
+</div>
+
+<!-- ===== SLIDE 4: WHY THESE CHOICES ===== -->
+<div class="slide">
+  <h2>Why This Tech Stack?</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>Why 5 Separate Services?</h3>
+      <table>
+        <tr><td><span class="highlight">Matchmaking</span></td><td>Must stay up even during games</td></tr>
+        <tr><td><span class="highlight">Quiz Engine</span></td><td>Long-lived streaming; isolated per room</td></tr>
+        <tr><td><span class="highlight">Scoring</span></td><td>High-frequency writes; atomic Redis ops</td></tr>
+        <tr><td><span class="highlight">Payment</span></td><td>PCI-adjacent; HTTP for Razorpay webhooks</td></tr>
+        <tr><td><span class="highlight">Notification</span></td><td>Fire-and-forget; no client API</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h3>Why These Technologies?</h3>
+      <table>
+        <tr><td><span class="tech">gRPC</span></td><td>Native streaming for real-time game events</td></tr>
+        <tr><td><span class="tech">Redis</span></td><td>Sub-ms latency for leaderboard + matchmaking pool</td></tr>
+        <tr><td><span class="tech">RabbitMQ</span></td><td>Topic exchange fan-out + DLQ for failed messages</td></tr>
+        <tr><td><span class="tech">MongoDB</span></td><td>Flexible schema; $sample for questions</td></tr>
+        <tr><td><span class="tech">Lua scripts</span></td><td>Atomic Redis ops (score + rank in 1 call)</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="speaker-note">
+    <p>STRESS: "Each service exists for a specific reason. Matchmaking handles identity and must never go down during a game. Quiz Engine manages long-lived gRPC streams — one per player. Scoring has the highest write frequency — every answer triggers a Redis update. Payment is HTTP because Razorpay sends webhooks, not gRPC. And the notification worker is pure background — no API at all."</p>
+  </div>
+</div>
+
+<!-- ===== SLIDE 5: LIVE DEMO ===== -->
+<div class="slide">
+  <h2>Live Demo — Game Flow</h2>
+  <p style="font-size: 1.3em; margin-bottom: 30px;">Two emulators playing against each other in real time.</p>
+
+  <h3>Demo Steps (follow this exact order):</h3>
+  <ol style="font-size: 1.1em; line-height: 2.2;">
+    <li><span class="highlight">Login</span> — Player 1: Google Sign-In, Player 2: email/password</li>
+    <li><span class="highlight">Home Screen</span> — Show daily quota, streak pill, coins, premium upsell</li>
+    <li><span class="highlight">Matchmaking</span> — Tap Play on both within 3 seconds. Show lobby with 2 avatars.</li>
+    <li><span class="highlight">Quiz Round</span> — Answer questions on both devices. Show live countdown ring.</li>
+    <li><span class="highlight">Leaderboard</span> — Between rounds. Show answer streak + win streak badges.</li>
+    <li><span class="highlight">Results</span> — Show winner, final scores. Tap "Play Again" or "Home".</li>
+    <li><span class="highlight">Profile</span> — Show 5 tabs: Profile stats / Last Match / Badges / Streak calendar / Referral</li>
+    <li><span class="highlight">Premium</span> — Open checkout, show Razorpay with Cards/Netbanking/UPI</li>
+  </ol>
+
+  <div class="speaker-note">
+    <p>"I'll now show you a LIVE match. [Open both emulators side by side.] Player 1 logs in with Google, Player 2 with email/password — both work identically. Now I'll tap Play on both... you can see 2 players in lobby... match found! Questions are broadcasting from the server. Notice the countdown is server-driven — the timer ring uses absolute timestamps, not a local timer that drifts."</p>
+  </div>
+</div>
+
+<!-- ===== SLIDE 6: RACE CONDITIONS ===== -->
+<div class="slide">
+  <h2>Race Condition Prevention</h2>
+  <p style="margin-bottom: 20px;">The hardest engineering problems in this project:</p>
+
+  <div class="grid">
+    <div class="card">
+      <h3>1. Atomic Leaderboard (Lua Script)</h3>
+      <pre>redis.call('ZINCRBY', key, points, member)
+redis.call('EXPIRE', key, 1800)
+local rank = redis.call('ZREVRANK', key, member)
+return rank</pre>
+      <p class="dim">3 ops in 1 round-trip. No stale rank between ZINCRBY and ZREVRANK.</p>
+    </div>
+    <div class="card">
+      <h3>2. Double Round Completion (SETNX)</h3>
+      <pre>SETNX room:{id}:round:{n}:closed "1" EX 1800</pre>
+      <p class="dim">Timer fires + last answer arrives simultaneously. Only the first goroutine proceeds.</p>
+    </div>
+    <div class="card">
+      <h3>3. Distributed Lock (UUID + Lua)</h3>
+      <pre>-- Acquire: SETNX with UUID owner
+-- Release: Lua compare-and-delete
+if redis.call('GET', key) == owner then
+  return redis.call('DEL', key)
+end</pre>
+      <p class="dim">Prevents blind delete if lock TTL expires before release.</p>
+    </div>
+    <div class="card">
+      <h3>4. Idempotent Answers (HEXISTS)</h3>
+      <pre>HSETNX room:{id}:submitted:{round} {userId} {answer}
+-- Scoring consumer: HEXISTS before updating leaderboard</pre>
+      <p class="dim">Double-tap or network retry = same score. Never double-counted.</p>
+    </div>
+  </div>
+
+  <div class="speaker-note">
+    <p>STRESS THESE HARD: "These are the problems that break real-time games. [Point to Lua script] This runs INSIDE Redis — 3 operations atomically. Without this, two players answering simultaneously would get stale ranks. [Point to SETNX] When 30-second timer and last answer arrive at the exact same millisecond — only one triggers round completion. [Point to lock] The UUID prevents a slow goroutine from deleting another's lock."</p>
+  </div>
+</div>
+
+<!-- ===== SLIDE 7: RABBITMQ EVENT FLOW ===== -->
+<div class="slide">
+  <h2>RabbitMQ Event Flow</h2>
+  <p style="margin-bottom: 15px;">Exchange: <code>sx</code> (topic, durable) — 9 queues, each with dedicated consumers</p>
+
+  <table>
+    <tr><th>Routing Key</th><th>Producer</th><th>Consumer</th><th>Purpose</th></tr>
+    <tr><td><code>match.created</code></td><td>Matchmaking</td><td>Quiz Engine</td><td>Triggers question selection</td></tr>
+    <tr><td><code>answer.submitted</code></td><td>Quiz Engine</td><td>Scoring</td><td>Score calculation + leaderboard update</td></tr>
+    <tr><td><code>round.completed</code></td><td>Quiz Engine</td><td>(logged)</td><td>Observability</td></tr>
+    <tr><td><code>match.finished</code></td><td>Quiz Engine</td><td>Scoring + Notification</td><td>Persist history + referral notification</td></tr>
+    <tr><td><code>notification.*</code></td><td>Cron/events</td><td>Notification Worker</td><td>Push notification dispatch</td></tr>
+    <tr><td><code>payment.success</code></td><td>Payment</td><td>—</td><td>Post-capture event</td></tr>
+  </table>
+
+  <h3>Show in RabbitMQ UI (http://localhost:15672)</h3>
+  <ol>
+    <li>Open Exchanges tab → click <code>sx</code> → show all bindings</li>
+    <li>Open Queues tab → show message rates during a live match</li>
+    <li>Show <code>answer-processing-dlq</code> — explain dead letter queue</li>
+  </ol>
+
+  <div class="speaker-note">
+    <p>"Open the RabbitMQ Management UI. [Show exchanges tab] Every event flows through one topic exchange — 'sx'. [Click sx, show bindings] You can see 9 queues bound with different routing keys. [Go to queues tab] During a match, watch the message rates spike — that's answer.submitted being consumed by the scoring service. [Point to DLQ] If scoring fails 3 times, the message goes here instead of being lost."</p>
+  </div>
+</div>
+
+<!-- ===== SLIDE 8: REDIS LIVE ===== -->
+<div class="slide">
+  <h2>Redis — Live Data Demo</h2>
+  <p style="margin-bottom: 15px;">Run these during/after a match:</p>
+
+  <pre>
+# Matchmaking pool (during lobby wait)
+ZRANGE matchmaking:pool 0 -1 WITHSCORES
+
+# Room state
+GET room:{id}:state
+
+# Live leaderboard (during match)
+ZREVRANGE room:{id}:leaderboard 0 -1 WITHSCORES
+
+# User plan (after login)
+GET user:{id}:plan                    → "free" or "premium"
+
+# Daily quota remaining
+GET user:{id}:daily_quota             → "4" or "unlimited"
+
+# Login streak
+HGETALL user:{id}:streak             → current: 5, longest: 12, last_login: 2026-04-15
+
+# Referral code lookup
+GET referral:code:QB4X9K              → "69dbbc63fe88..."
+  </pre>
+
+  <div class="speaker-note">
+    <p>"Let me show you the data in Redis in real time. [Open redis-cli] First, the matchmaking pool — you can see both players with their ratings as scores. [During match] Here's the live leaderboard — sorted set, updated atomically after every answer. [After match] User plan, daily quota, streak — all cached in Redis for fast access. These keys are set on every login."</p>
+  </div>
+</div>
+
+<!-- ===== SLIDE 9: MONGODB COMPASS ===== -->
+<div class="slide">
+  <h2>MongoDB — Data in Compass</h2>
+  <p style="margin-bottom: 15px;">7 collections with comprehensive indexes:</p>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Show in Compass:</h3>
+      <ol style="line-height: 2;">
+        <li><code>users</code> — rating, matches_played, matches_won, referral_code, streak, coins</li>
+        <li><code>match_history</code> — finalScore, rank, answersCorrect, avgResponseMs, duration</li>
+        <li><code>questions</code> — 150 questions, 3 difficulty levels, 12 topics</li>
+        <li><code>payments</code> — order_id, razorpay_payment_id, status, plan</li>
+        <li><code>subscriptions</code> — user_id, plan, expires_at, status</li>
+        <li><code>device_tokens</code> — FCM tokens per user</li>
+        <li><code>referrals</code> — referrer_id, referee_id, code_used</li>
+      </ol>
+    </div>
+    <div class="card">
+      <h3>Key Points to Stress:</h3>
+      <ul>
+        <li><span class="green">All fields populated</span> — no 0s or nulls where real values should be</li>
+        <li><span class="green">Unique indexes</span> — username, referral_code (sparse), device_tokens.user_id</li>
+        <li><span class="green">Stats persist</span> — matches_played, matches_won survive app reinstall</li>
+        <li><span class="green">match_history complete</span> — winner, duration, avgResponseMs all computed</li>
+        <li><span class="green">Referral anti-abuse</span> — referee_id unique (can't apply twice)</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="speaker-note">
+    <p>"Open MongoDB Compass, connect to localhost:27017, click quizdb. [Click users] Here's a user document — you can see rating, matches_played, matches_won, referral_code, streak data, coins. All of this persists across app reinstalls — we push to MongoDB after every stat change. [Click match_history] Here's a completed match — every field is populated: finalScore, rank, answersCorrect, avgResponseMs — all computed server-side, not client-side."</p>
+  </div>
+</div>
+
+<!-- ===== SLIDE 10: PHASE 2 FEATURES ===== -->
+<div class="slide">
+  <h2>Phase 2 Features</h2>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Google Sign-In</h3>
+      <ul>
+        <li>One-tap login with Google OAuth 2.0</li>
+        <li>Server-side token verification via Google tokeninfo API</li>
+        <li>Account linking by email (password → Google merge)</li>
+        <li>Profile picture CDN URL stored + displayed everywhere</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Daily Rewards &amp; Streak</h3>
+      <ul>
+        <li>30-day reward cycle with escalating coins + bonus games</li>
+        <li>Day 7: Week Warrior badge + 250 coins</li>
+        <li>Day 30: Monthly Master + 7-day premium trial</li>
+        <li>Animated claim popup on home screen</li>
+        <li>30-day login calendar on Profile</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Premium + Razorpay</h3>
+      <ul>
+        <li>Monthly &#8377;499 / Yearly &#8377;3,999</li>
+        <li>HMAC-SHA256 webhook signature verification</li>
+        <li>Idempotent webhook processing</li>
+        <li>Server-side quota enforcement (5 games/day free)</li>
+        <li>Coupon discount via referral codes</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Referral System</h3>
+      <ul>
+        <li>6-char codes (crypto/rand, 887M combinations)</li>
+        <li>5 anti-abuse rules (self-referral, time window, cap, etc.)</li>
+        <li>Referrer: +200 coins, +2 bonus games</li>
+        <li>Referee: +100 coins, +1 bonus game</li>
+        <li>Pending → Claim flow (server source of truth)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>FCM Push Notifications</h3>
+      <ul>
+        <li>5 notification types (streak warning, daily reward, premium expiry, referral conversion, tournament)</li>
+        <li>Cron scheduler (7pm IST streak, 8am daily reward)</li>
+        <li>Referral conversion: exactly-once via atomic MongoDB flag</li>
+        <li>Background + foreground handling in Flutter</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Server-Side Enforcement</h3>
+      <ul>
+        <li>Daily quota checked in JoinMatchmaking (not just UI)</li>
+        <li>Leaderboard capped to top 3 for free users</li>
+        <li>All stats persisted to MongoDB (20 fields)</li>
+        <li>Late joiner gets current question + timer on connect</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="speaker-note">
+    <p>"These are the Phase 2 features — all implemented and working. [Point to each card] Google Sign-In with server-side verification. Daily rewards with a 30-day cycle. Razorpay payments with webhook signature verification. Referral system with 5 anti-abuse checks. FCM notifications with a dedicated background worker. And critically — server-side enforcement everywhere. Quota is checked on the backend, not just hidden in the UI."</p>
+  </div>
+</div>
+
+<!-- ===== SLIDE 11: BUGS ===== -->
+<div class="slide">
+  <h2>Hardest Bugs &amp; How I Fixed Them</h2>
+  <p class="dim" style="margin-bottom: 20px;">35 bugs documented. Here are the ones worth discussing:</p>
+
+  <table>
+    <tr><th>#</th><th>Bug</th><th>Root Cause</th><th>Fix</th></tr>
+    <tr>
+      <td>2</td>
+      <td>Leaderboard all 0s after microservice split</td>
+      <td>Quiz handler and scoring consumer both used HSETNX on same Redis key</td>
+      <td>Separated into <code>submitted</code> (instant) and <code>answers</code> (scoring) keys</td>
+    </tr>
+    <tr>
+      <td>7</td>
+      <td>3+ players in same room</td>
+      <td>Concurrent ZPOPMIN without locking</td>
+      <td>Distributed lock (SETNX + UUID + Lua release)</td>
+    </tr>
+    <tr>
+      <td>17</td>
+      <td>Questions repeating in same match</td>
+      <td>MongoDB $sample re-visits docs at &gt;5% pool</td>
+      <td>Fisher-Yates shuffle in Go, cross-bucket exclusion</td>
+    </tr>
+    <tr>
+      <td>19</td>
+      <td>Razorpay crash on Android</td>
+      <td>Callbacks fire during Activity onResume before Flutter tree ready</td>
+      <td><code>Future.delayed(Duration.zero, ...)</code> defers to next tick</td>
+    </tr>
+    <tr>
+      <td>28</td>
+      <td>MatchFound never delivered to players</td>
+      <td>JoinMatchmaking deleted the SubscribeToMatch channel</td>
+      <td>Removed the delete; SubscribeToMatch overwrites on reconnect</td>
+    </tr>
+    <tr>
+      <td>32</td>
+      <td>Stats reset on app reinstall</td>
+      <td>Only SharedPreferences, no MongoDB sync</td>
+      <td>Added GET/POST /user/stats; push after every save, pull on login</td>
+    </tr>
+  </table>
+
+  <div class="speaker-note">
+    <p>"I documented 35 bugs throughout development. Let me highlight the hardest ones. [Point to #2] After splitting into microservices, all scores showed 0 — because both services were writing to the same Redis key. [Point to #7] Matchmaking race condition — two goroutines popping the same players. Fixed with a distributed lock using UUID ownership. [Point to #17] MongoDB's $sample was repeating questions — replaced with Fisher-Yates shuffle. [Point to #28] This was the most recent — players matched but never got the event. JoinMatchmaking was accidentally deleting the subscription channel."</p>
+  </div>
+</div>
+
+<!-- ===== SLIDE 12: EDGE CASES ===== -->
+<div class="slide">
+  <h2>Edge Cases Handled</h2>
+
+  <table>
+    <tr><th>Scenario</th><th>What Happens</th></tr>
+    <tr><td>Player disconnects mid-match</td><td>Marked as forfeited; moves to spectating screen; receives MatchEnd</td></tr>
+    <tr><td>Double answer submission</td><td>HSETNX rejects duplicate; only first answer scored</td></tr>
+    <tr><td>Razorpay webhook arrives twice</td><td>Idempotency check: if payment_id already captured, return 200 immediately</td></tr>
+    <tr><td>Free user at daily limit hits Play</td><td>Server returns ResourceExhausted before adding to pool</td></tr>
+    <tr><td>Premium expires mid-day</td><td>isEffectivelyPremium checks expiry in real-time — no logout needed</td></tr>
+    <tr><td>Referral: user applies own code</td><td>Server rejects: "you cannot use your own referral code"</td></tr>
+    <tr><td>Login streak after missing a day</td><td>Resets to 1; computed from loginHistory walking backwards from today</td></tr>
+    <tr><td>Late joiner connects mid-round</td><td>Server sends current question + TimerSync immediately</td></tr>
+    <tr><td>All players disconnect</td><td>Game loop exits; room keys expire via 30-min TTL</td></tr>
+    <tr><td>copyWith(premiumTrialExpiresAt: null)</td><td>Sentinel object pattern distinguishes "set to null" from "don't change"</td></tr>
+  </table>
+
+  <div class="speaker-note">
+    <p>"Here are the edge cases I was asked to handle. Each one has a tested implementation. [Pick 2-3 and explain briefly] The forfeit flow is interesting — the player moves to a spectating screen and can still watch the match live. When the match ends, they get a synthetic MatchEnd event built from the last leaderboard state."</p>
+  </div>
+</div>
+
+<!-- ===== SLIDE 13: NUMBERS ===== -->
+<div class="slide">
+  <h2>By the Numbers</h2>
+
+  <div class="grid" style="grid-template-columns: 1fr 1fr 1fr;">
+    <div class="card" style="text-align: center;">
+      <p style="font-size: 3em; color: #ff7043; font-weight: 800;">5</p>
+      <p>Go Microservices</p>
+    </div>
+    <div class="card" style="text-align: center;">
+      <p style="font-size: 3em; color: #4fc3f7; font-weight: 800;">8</p>
+      <p>Docker Containers</p>
+    </div>
+    <div class="card" style="text-align: center;">
+      <p style="font-size: 3em; color: #66bb6a; font-weight: 800;">9</p>
+      <p>RabbitMQ Queues</p>
+    </div>
+    <div class="card" style="text-align: center;">
+      <p style="font-size: 3em; color: #ffb74d; font-weight: 800;">7</p>
+      <p>MongoDB Collections</p>
+    </div>
+    <div class="card" style="text-align: center;">
+      <p style="font-size: 3em; color: #ff7043; font-weight: 800;">10</p>
+      <p>Flutter Screens</p>
+    </div>
+    <div class="card" style="text-align: center;">
+      <p style="font-size: 3em; color: #4fc3f7; font-weight: 800;">35</p>
+      <p>Bugs Documented &amp; Fixed</p>
+    </div>
+    <div class="card" style="text-align: center;">
+      <p style="font-size: 3em; color: #66bb6a; font-weight: 800;">150</p>
+      <p>Questions Seeded</p>
+    </div>
+    <div class="card" style="text-align: center;">
+      <p style="font-size: 3em; color: #ffb74d; font-weight: 800;">20</p>
+      <p>Stats Persisted to MongoDB</p>
+    </div>
+    <div class="card" style="text-align: center;">
+      <p style="font-size: 3em; color: #ff7043; font-weight: 800;">6</p>
+      <p>Phase 2 Features</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SLIDE 14: DEMO CHECKLIST ===== -->
+<div class="slide">
+  <h2>Pre-Demo Checklist</h2>
+  <p style="margin-bottom: 20px;">Run before presenting:</p>
+
+  <pre>
+# 1. Start everything
+docker compose up --build -d
+
+# 2. Verify all healthy
+docker compose ps
+
+# 3. Open these tabs BEFORE the demo:
+#    - MongoDB Compass → localhost:27017 → quizdb
+#    - RabbitMQ UI → http://localhost:15672 (guest/guest)
+#    - Two Android emulators running
+#    - Redis CLI: docker compose exec redis redis-cli
+
+# 4. Reset quotas (so demo users can play)
+docker compose exec mongodb mongosh quizdb --eval "db.users.updateMany({}, {\$set: {daily_quiz_used: 0, last_quiz_date: ''}})"
+
+# 5. Flush stale matchmaking pool
+docker compose exec redis redis-cli DEL matchmaking:pool
+
+# 6. Start Flutter on both emulators
+cd flutter-app && flutter run -d emulator-5554  # Terminal 1
+cd flutter-app && flutter run -d emulator-5556  # Terminal 2
+  </pre>
+
+  <div class="speaker-note">
+    <p>"Before the demo, make sure all services are up, Compass and RabbitMQ UI are open in browser tabs, both emulators are running, and quotas are reset. This avoids any 'daily limit reached' surprises during the live demo."</p>
+  </div>
+</div>
+
+<!-- ===== SLIDE 15: Q&A ===== -->
+<div class="slide" style="text-align: center; justify-content: center;">
+  <h1 style="font-size: 3.5em;">Q&amp;A</h1>
+  <p style="font-size: 1.3em; margin-top: 20px; color: #ffb74d;">
+    GitHub: <code>MANAS-exe/QUIZ_BATTLE_SYSTEM</code>
+  </p>
+  <p style="font-size: 1em; margin-top: 30px; color: #666;">
+    Full documentation: <code>docs/MASTER_DOC.md</code> &bull;
+    Bugs: <code>docs/BUGS_AND_FIXES.md</code> &bull;
+    Architecture: <code>docs/architecture.md</code>
+  </p>
+
+  <div class="speaker-note">
+    <p>"That's the full walkthrough. I'm happy to dive deeper into any service, show more Redis data, or discuss any of the race condition solutions. Questions?"</p>
+  </div>
+</div>
+
+</body>
+</html>

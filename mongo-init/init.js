@@ -421,6 +421,126 @@ db.users.createIndex({ referral_code: 1 }, { unique: true, sparse: true });
 db.referrals.createIndex({ referrer_id: 1 });
 db.referrals.createIndex({ referee_id: 1 }, { unique: true });
 
+// Tournament indexes
+db.tournaments.createIndex({ status: 1, starts_at: 1 });
+db.tournaments.createIndex({ "participants.user_id": 1 });
+
+// ── Seed tournaments ─────────────────────────────────────
+const now = new Date();
+const in3Hours   = new Date(now.getTime() + 3 * 60 * 60 * 1000);
+const tomorrow   = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+const in3Days    = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+const nextWeek   = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+const in10Days   = new Date(now.getTime() + 10 * 24 * 60 * 60 * 1000);
+const yesterday  = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+db.tournaments.deleteMany({});
+db.tournaments.insertMany([
+  {
+    name: "Today's Flash Cup",
+    description: "A short burst tournament — 5 rounds, top 3 win big! Starts in 3 hours.",
+    type: "flash",
+    status: "upcoming",
+    starts_at: in3Hours,
+    ends_at: new Date(in3Hours.getTime() + 45 * 60 * 1000),
+    max_participants: 30,
+    entry_fee: 50,
+    premium_only: false,
+    prizes: { first: 500, second: 250, third: 100 },
+    rounds: 5,
+    difficulty: "easy",
+    participants: [],
+    created_at: now
+  },
+  {
+    name: "Weekly Challenge",
+    description: "Compete against the best players this week. Top 3 win coins!",
+    type: "weekly",
+    status: "upcoming",
+    starts_at: tomorrow,
+    ends_at: new Date(tomorrow.getTime() + 2 * 60 * 60 * 1000),
+    max_participants: 50,
+    entry_fee: 0,
+    premium_only: true,
+    prizes: { first: 1000, second: 500, third: 250 },
+    rounds: 10,
+    difficulty: "mixed",
+    participants: [],
+    created_at: now
+  },
+  {
+    name: "Beginner's Blitz",
+    description: "Easy questions, big fun. Perfect for new players — no entry fee!",
+    type: "special",
+    status: "upcoming",
+    starts_at: in3Days,
+    ends_at: new Date(in3Days.getTime() + 90 * 60 * 1000),
+    max_participants: 100,
+    entry_fee: 0,
+    premium_only: false,
+    prizes: { first: 300, second: 150, third: 75 },
+    rounds: 8,
+    difficulty: "easy",
+    participants: [],
+    created_at: now
+  },
+  {
+    name: "Speed Demon Sprint",
+    description: "10 hard questions, 15 seconds each. Only the fastest survive!",
+    type: "special",
+    status: "upcoming",
+    starts_at: nextWeek,
+    ends_at: new Date(nextWeek.getTime() + 1 * 60 * 60 * 1000),
+    max_participants: 20,
+    entry_fee: 100,
+    premium_only: false,
+    prizes: { first: 2000, second: 1000, third: 500 },
+    rounds: 10,
+    difficulty: "hard",
+    participants: [],
+    created_at: now
+  },
+  {
+    name: "Grand Masters Invitational",
+    description: "Elite PRO-only event. 15 rounds of the hardest questions — legends only.",
+    type: "invitational",
+    status: "upcoming",
+    starts_at: in10Days,
+    ends_at: new Date(in10Days.getTime() + 3 * 60 * 60 * 1000),
+    max_participants: 16,
+    entry_fee: 500,
+    premium_only: true,
+    prizes: { first: 5000, second: 2500, third: 1000 },
+    rounds: 15,
+    difficulty: "hard",
+    participants: [],
+    created_at: now
+  },
+  {
+    name: "Last Week's Showdown",
+    description: "The results are in! Check out who won.",
+    type: "weekly",
+    status: "completed",
+    starts_at: yesterday,
+    ends_at: new Date(yesterday.getTime() + 2 * 60 * 60 * 1000),
+    max_participants: 50,
+    entry_fee: 0,
+    premium_only: true,
+    prizes: { first: 1000, second: 500, third: 250 },
+    rounds: 10,
+    difficulty: "mixed",
+    participants: [
+      { user_id: "seed_alice", username: "alice", score: 1850, rank: 1 },
+      { user_id: "seed_bob", username: "bob", score: 1720, rank: 2 },
+      { user_id: "seed_charlie", username: "charlie", score: 1650, rank: 3 },
+    ],
+    winner: "seed_alice",
+    created_at: new Date(yesterday.getTime() - 7 * 24 * 60 * 60 * 1000)
+  }
+]);
+
+print("✓ 6 tournaments seeded (5 upcoming, 1 completed)");
+
 print("✓ Indexes created:");
 print("  users: username (unique), email (sparse), referral_code (unique sparse)");
 print("  questions: difficulty, topic");

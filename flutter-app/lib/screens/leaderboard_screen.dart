@@ -163,6 +163,9 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
         ? result.fastestUsername
         : result.fastestUserId;
     final hasFastest = fastestName.isNotEmpty;
+    // If no fastest but there were correct answers, it's a tie
+    final hasCorrectAnswers = result.scores.any((s) => s.answersCorrect > 0);
+    final isTie = !hasFastest && hasCorrectAnswers;
     final answerText = result.correctAnswerText.isNotEmpty
         ? result.correctAnswerText
         : 'Option ${String.fromCharCode(65 + result.correctIndex)}';
@@ -237,14 +240,35 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
                       ),
                     ],
                   )
-                : const Text(
-                    'No correct\nanswers',
-                    textAlign: TextAlign.end,
-                    style: TextStyle(
-                        color: Colors.white30,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500),
-                  ),
+                : isTie
+                    ? const Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.handshake_rounded, color: Colors.amber, size: 14),
+                              SizedBox(width: 4),
+                              Text('Tie!',
+                                  style: TextStyle(
+                                      color: Colors.amber,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700)),
+                            ],
+                          ),
+                          SizedBox(height: 2),
+                          Text('Same speed',
+                              style: TextStyle(color: Colors.white38, fontSize: 10)),
+                        ],
+                      )
+                    : const Text(
+                        'No correct\nanswers',
+                        textAlign: TextAlign.end,
+                        style: TextStyle(
+                            color: Colors.white30,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500),
+                      ),
           ),
         ],
       ),
@@ -254,17 +278,20 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
   // ─── PODIUM (top 3) ───────────────────────────────────────
 
   Widget _buildPodium(List<PlayerScore> top3, String? myUserId) {
+    // Score gap between 1st and 2nd
+    final gap = top3.length > 1 ? top3[0].score - top3[1].score : 0;
+
     // Podium order: 2nd (left), 1st (center, tallest), 3rd (right)
     final order = [
       if (top3.length > 1) top3[1] else null, // left — 2nd
       top3[0], // center — 1st
       if (top3.length > 2) top3[2] else null, // right — 3rd
     ];
-    final heights = [100.0, 130.0, 80.0];
+    final heights = [100.0, 140.0, 80.0];
     final colors = [_silver, _gold, _bronze];
     final labelColors = [_silver, _gold, _bronze];
 
-    return Padding(
+    final podiumRow = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -289,6 +316,40 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
           );
         }),
       ),
+    );
+
+    return Column(
+      children: [
+        podiumRow,
+        // Score gap indicator
+        if (gap > 0 && top3.length > 1)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              decoration: BoxDecoration(
+                color: _gold.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: _gold.withValues(alpha: 0.2)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.trending_up_rounded, color: _gold, size: 14),
+                  const SizedBox(width: 6),
+                  Text(
+                    '${top3[0].username} leads by $gap pts',
+                    style: TextStyle(
+                      color: _gold.withValues(alpha: 0.8),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ).animate().fadeIn(delay: 400.ms, duration: 300.ms),
+      ],
     );
   }
 
@@ -393,6 +454,8 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
   // ─── Win streak badge (fastest correct answers in a row) ──────
 
   Widget _buildWinStreakBadge(int streak) {
+    const electric = Color(0xFF7C4DFF); // electric purple
+    const cyan = Color(0xFF00E5FF);
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20),
       padding: const EdgeInsets.symmetric(vertical: 14),
@@ -400,13 +463,13 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            _gold.withValues(alpha: 0.12),
-            const Color(0xFF00C9FF).withValues(alpha: 0.08),
-            _gold.withValues(alpha: 0.12),
+            electric.withValues(alpha: 0.15),
+            cyan.withValues(alpha: 0.08),
+            electric.withValues(alpha: 0.15),
           ],
         ),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _gold.withValues(alpha: 0.3)),
+        border: Border.all(color: electric.withValues(alpha: 0.4)),
       ),
       child: Column(
         children: [
@@ -419,8 +482,8 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
                 child: Icon(
                   Icons.bolt_rounded,
                   color: Color.lerp(
-                    _gold,
-                    const Color(0xFF00C9FF),
+                    cyan,
+                    electric,
                     i / 5,
                   ),
                   size: 22,
@@ -432,7 +495,7 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
           Text(
             '$streak',
             style: const TextStyle(
-              color: _gold,
+              color: cyan,
               fontSize: 28,
               fontWeight: FontWeight.w900,
             ),
@@ -537,14 +600,14 @@ class _PodiumBlock extends StatelessWidget {
                 shape: BoxShape.circle,
                 color: _avatarBg,
                 border: Border.all(
-                  color: isMe ? _coral : podiumColor.withValues(alpha: 0.6),
-                  width: 2.5,
+                  color: isMe ? _coral : podiumColor.withValues(alpha: 0.7),
+                  width: rankBadge == '1' ? 3.0 : 2.5,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: podiumColor.withValues(alpha: 0.3),
-                    blurRadius: 12,
-                    spreadRadius: 2,
+                    color: podiumColor.withValues(alpha: rankBadge == '1' ? 0.5 : 0.3),
+                    blurRadius: rankBadge == '1' ? 20 : 12,
+                    spreadRadius: rankBadge == '1' ? 4 : 2,
                   ),
                 ],
               ),
@@ -597,6 +660,14 @@ class _PodiumBlock extends StatelessWidget {
           style: TextStyle(
               color: labelColor, fontSize: 11, fontWeight: FontWeight.w600),
         ),
+        if (score.avgResponseMs > 0) ...[
+          const SizedBox(height: 2),
+          Text(
+            '${(score.avgResponseMs / 1000).toStringAsFixed(1)}s avg',
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.3), fontSize: 9),
+          ),
+        ],
         const SizedBox(height: 8),
         // Podium base
         Container(
@@ -725,10 +796,20 @@ class _ListRow extends StatelessWidget {
                     ],
                   ],
                 ),
-                Text(
-                  '${score.answersCorrect} correct',
-                  style: const TextStyle(
-                      color: Colors.white38, fontSize: 11),
+                Row(
+                  children: [
+                    Text(
+                      '${score.answersCorrect} correct',
+                      style: const TextStyle(color: Colors.white38, fontSize: 11),
+                    ),
+                    if (score.avgResponseMs > 0) ...[
+                      const SizedBox(width: 6),
+                      Text(
+                        '${(score.avgResponseMs / 1000).toStringAsFixed(1)}s avg',
+                        style: TextStyle(color: Colors.white.withValues(alpha: 0.25), fontSize: 10),
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ),

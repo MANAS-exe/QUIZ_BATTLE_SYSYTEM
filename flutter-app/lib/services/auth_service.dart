@@ -172,7 +172,7 @@ class AuthState {
   final int currentStreak;          // consecutive login-day streak
   final int maxStreak;              // all-time max login-day streak
   final int maxQuestionStreak;      // best answer streak ever
-  final LastMatchData? lastMatch;
+  final List<LastMatchData> matchHistory; // newest-first, capped at 3
 
   // ── Daily rewards ──────────────────────────────────────────────
   final int coins;                       // total coins earned, never decreases
@@ -204,7 +204,7 @@ class AuthState {
     this.currentStreak = 0,
     this.maxStreak = 0,
     this.maxQuestionStreak = 0,
-    this.lastMatch,
+    this.matchHistory = const [],
     this.coins = 0,
     this.bonusGamesRemaining = 0,
     this.loginHistory = const [],
@@ -219,6 +219,10 @@ class AuthState {
   });
 
   // ── Computed getters ───────────────────────────────────────────
+
+  /// Convenience accessor — the most recent match, or null if none played.
+  LastMatchData? get lastMatch =>
+      matchHistory.isNotEmpty ? matchHistory.first : null;
 
   /// True when the user has paid premium OR an active premium trial.
   bool get isEffectivelyPremium {
@@ -249,7 +253,7 @@ class AuthState {
   DailyReward? get pendingReward {
     if (!isLoggedIn) return null;
     if (currentStreak == 0) return null;
-    final today = DateTime.now().toIso8601String().substring(0, 10);
+    final today = DateTime.now().toUtc().toIso8601String().substring(0, 10);
     if (dailyRewardClaimedDate == today) return null;
     return rewardForDay(currentStreak);
   }
@@ -269,7 +273,7 @@ class AuthState {
     int? currentStreak,
     int? maxStreak,
     int? maxQuestionStreak,
-    LastMatchData? lastMatch,
+    List<LastMatchData>? matchHistory,
     int? coins,
     int? bonusGamesRemaining,
     List<String>? loginHistory,
@@ -298,7 +302,7 @@ class AuthState {
       currentStreak: currentStreak ?? this.currentStreak,
       maxStreak: maxStreak ?? this.maxStreak,
       maxQuestionStreak: maxQuestionStreak ?? this.maxQuestionStreak,
-      lastMatch: lastMatch ?? this.lastMatch,
+      matchHistory: matchHistory ?? this.matchHistory,
       coins: coins ?? this.coins,
       bonusGamesRemaining: bonusGamesRemaining ?? this.bonusGamesRemaining,
       loginHistory: loginHistory ?? this.loginHistory,
@@ -394,6 +398,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       await _saveGoogleSession(userId, idToken);
       await _loadLocalStats();
       await _syncPremiumFromServer();
+      await _syncStatsFromServer();
       await _syncReferralFromServer();
       _initNotifications();
       return null;
@@ -498,6 +503,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         await _saveCredentials(username, password);
         await _loadLocalStats();
         await _syncPremiumFromServer();
+        await _syncStatsFromServer();
         await _syncReferralFromServer();
         _initNotifications();
         return null;
@@ -526,6 +532,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         await _saveCredentials(username, password);
         await _loadLocalStats();
         await _syncPremiumFromServer();
+        await _syncStatsFromServer();
         await _syncReferralFromServer();
         _initNotifications();
         return null;
@@ -534,6 +541,47 @@ class AuthNotifier extends StateNotifier<AuthState> {
     } on GrpcError catch (e) {
       debugPrint('[AuthService] login error: ${e.codeName} — ${e.message}');
       return e.message ?? 'Login failed';
+    }
+  }
+
+  // ── Change Password ─────────────────────────────────────────────
+
+  /// Changes the password for the currently logged-in user.
+  /// Returns null on success, or an error message string.
+  Future<String?> changePassword(String newPassword) async {
+    final token = state.token;
+    if (token == null) return 'Not logged in';
+    if (newPassword.length < 4) return 'Password must be at least 4 characters';
+
+    final host = defaultTargetPlatform == TargetPlatform.android
+        ? '10.0.2.2'
+        : 'localhost';
+    try {
+      final response = await http
+          .post(
+            Uri.parse('http://$host:8080/user/change-password'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode({'new_password': newPassword}),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 200 && body['success'] == true) {
+        // Update saved password so auto-login still works
+        final prefs = await SharedPreferences.getInstance();
+        final savedUsername = prefs.getString('saved_username');
+        if (savedUsername != null) {
+          await prefs.setString('saved_password', newPassword);
+        }
+        return null;
+      }
+      return body['message'] as String? ?? 'Failed to change password';
+    } catch (e) {
+      debugPrint('[AuthService] changePassword error: $e');
+      return 'Network error — please try again';
     }
   }
 
@@ -585,6 +633,124 @@ class AuthNotifier extends StateNotifier<AuthState> {
       // Non-fatal — fall back to locally cached value
       debugPrint('[AuthService] premium sync failed: $e');
     }
+  }
+
+  /// Fetches ALL persistent user stats from the server and merges into local
+  /// state. This ensures stats survive app reinstall or new device login.
+  Future<void> _syncStatsFromServer() async {
+    final token = state.token;
+    if (token == null) return;
+
+    final host = defaultTargetPlatform == TargetPlatform.android
+        ? '10.0.2.2'
+        : 'localhost';
+    try {
+      final resp = await http
+          .get(
+            Uri.parse('http://$host:8080/user/stats'),
+            headers: {'Authorization': 'Bearer $token'},
+          )
+          .timeout(const Duration(seconds: 5));
+
+      if (resp.statusCode == 200) {
+        final b = jsonDecode(resp.body) as Map<String, dynamic>;
+
+        // Use the higher of local and server for numeric counters
+        int max(int a, int b) => a > b ? a : b;
+
+        final serverHistory = (b['login_history'] as List?)
+            ?.map((e) => e.toString())
+            .toList();
+
+        state = state.copyWith(
+          rating: max(b['rating'] as int? ?? 0, state.rating),
+          matchesPlayed: max(b['matches_played'] as int? ?? 0, state.matchesPlayed),
+          matchesWon: max(b['matches_won'] as int? ?? 0, state.matchesWon),
+          coins: max(b['coins'] as int? ?? 0, state.coins),
+          // bonus_games_remaining can decrease — use server value, not max
+          bonusGamesRemaining: b['bonus_games_remaining'] as int? ?? state.bonusGamesRemaining,
+          currentStreak: max(b['current_streak'] as int? ?? 0, state.currentStreak),
+          maxStreak: max(b['longest_streak'] as int? ?? 0, state.maxStreak),
+          maxQuestionStreak: max(b['max_question_streak'] as int? ?? 0, state.maxQuestionStreak),
+          loginHistory: serverHistory != null && serverHistory.length > state.loginHistory.length
+              ? serverHistory
+              : state.loginHistory,
+          premiumTrialExpiresAt: (b['premium_trial_expiry'] as String?) ?? state.premiumTrialExpiresAt,
+          dailyRewardClaimedDate: (b['daily_reward_claimed'] as String?) ?? state.dailyRewardClaimedDate,
+        );
+
+        // Restore last match from server if local history is empty
+        if (state.matchHistory.isEmpty && (b['lm_score'] as int? ?? 0) > 0) {
+          state = state.copyWith(
+            matchHistory: [
+              LastMatchData(
+                won: b['lm_won'] as bool? ?? false,
+                rank: b['lm_rank'] as int? ?? 0,
+                score: b['lm_score'] as int? ?? 0,
+                answersCorrect: b['lm_answers_correct'] as int? ?? 0,
+                totalRounds: b['lm_total_rounds'] as int? ?? 0,
+                avgResponseMs: b['lm_avg_response_ms'] as int? ?? 0,
+                durationSeconds: b['lm_duration_seconds'] as int? ?? 0,
+                maxStreak: b['lm_max_streak'] as int? ?? 0,
+                winnerUsername: b['lm_winner_username'] as String? ?? '',
+              ),
+            ],
+          );
+        }
+
+        _saveLocalStats();
+        debugPrint('[AuthService] stats synced from server — played: ${state.matchesPlayed}, won: ${state.matchesWon}');
+      }
+    } catch (e) {
+      debugPrint('[AuthService] stats sync failed: $e');
+    }
+  }
+
+  /// Pushes all local stats to MongoDB so they survive app reinstall.
+  /// Called fire-and-forget after every _saveLocalStats().
+  void _pushStatsToServer() {
+    final token = state.token;
+    if (token == null) return;
+
+    final host = defaultTargetPlatform == TargetPlatform.android
+        ? '10.0.2.2'
+        : 'localhost';
+
+    // Send only the most recent match to the server (backward-compat with lm_* fields).
+    final lm = state.matchHistory.isNotEmpty ? state.matchHistory.first : null;
+    http
+        .post(
+          Uri.parse('http://$host:8080/user/stats'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode({
+            'rating': state.rating,
+            'matches_played': state.matchesPlayed,
+            'matches_won': state.matchesWon,
+            'coins': state.coins,
+            'bonus_games_remaining': state.bonusGamesRemaining,
+            'current_streak': state.currentStreak,
+            'longest_streak': state.maxStreak,
+            'max_question_streak': state.maxQuestionStreak,
+            'login_history': state.loginHistory,
+            'premium_trial_expiry': state.premiumTrialExpiresAt ?? '',
+            'daily_reward_claimed': state.dailyRewardClaimedDate ?? '',
+            'lm_won': lm?.won ?? false,
+            'lm_rank': lm?.rank ?? 0,
+            'lm_score': lm?.score ?? 0,
+            'lm_answers_correct': lm?.answersCorrect ?? 0,
+            'lm_total_rounds': lm?.totalRounds ?? 0,
+            'lm_avg_response_ms': lm?.avgResponseMs ?? 0,
+            'lm_duration_seconds': lm?.durationSeconds ?? 0,
+            'lm_max_streak': lm?.maxStreak ?? 0,
+            'lm_winner_username': lm?.winnerUsername ?? '',
+          }),
+        )
+        .timeout(const Duration(seconds: 5))
+        .then((_) => debugPrint('[AuthService] stats pushed to server'))
+        .catchError((e) => debugPrint('[AuthService] stats push failed: $e'));
   }
 
   // ── Referral ───────────────────────────────────────────────────
@@ -860,17 +1026,23 @@ class AuthNotifier extends StateNotifier<AuthState> {
     final bestQStreak = matchMaxStreak > state.maxQuestionStreak
         ? matchMaxStreak
         : state.maxQuestionStreak;
+
+    // Prepend the new match and keep at most 3 entries.
+    final newHistory = lastMatch != null
+        ? [lastMatch, ...state.matchHistory].take(3).toList()
+        : state.matchHistory;
+
     state = state.copyWith(
       rating: newRating,
       matchesPlayed: played,
       matchesWon: wins,
       maxQuestionStreak: bestQStreak,
-      lastMatch: lastMatch,
+      matchHistory: newHistory,
     );
     _saveLocalStats();
   }
 
-  void logout() async {
+  Future<void> logout() async {
     await _googleSignIn.signOut();
     await NotificationService.instance.clearToken();
     final prefs = await SharedPreferences.getInstance();
@@ -884,7 +1056,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   String get _statsKey => 'stats_${state.userId}';
 
-  String _today() => DateTime.now().toIso8601String().substring(0, 10);
+  String _today() => DateTime.now().toUtc().toIso8601String().substring(0, 10);
 
   /// Updates the login-day streak from the stored login history.
   ///
@@ -975,18 +1147,26 @@ class AuthNotifier extends StateNotifier<AuthState> {
     await prefs.setBool('${key}_premium', state.isPremium);
     await prefs.setInt('${key}_coins', state.coins);
     await prefs.setInt('${key}_bonusGames', state.bonusGamesRemaining);
-    final lm = state.lastMatch;
-    if (lm != null) {
-      await prefs.setBool('${key}_lm_won', lm.won);
-      await prefs.setInt('${key}_lm_rank', lm.rank);
-      await prefs.setInt('${key}_lm_score', lm.score);
-      await prefs.setInt('${key}_lm_correct', lm.answersCorrect);
-      await prefs.setInt('${key}_lm_rounds', lm.totalRounds);
-      await prefs.setInt('${key}_lm_avgMs', lm.avgResponseMs);
-      await prefs.setInt('${key}_lm_duration', lm.durationSeconds);
-      await prefs.setInt('${key}_lm_streak', lm.maxStreak);
-      await prefs.setString('${key}_lm_winner', lm.winnerUsername);
-    }
+    // Persist daily quota so it survives app restarts
+    await prefs.setInt('${key}_dq_used', state.dailyQuizUsed);
+    await prefs.setString('${key}_dq_date', _today());
+
+    // Persist match history as JSON (replaces legacy lm_* scalar keys)
+    final historyJson = jsonEncode(state.matchHistory.map((lm) => {
+      'won': lm.won,
+      'rank': lm.rank,
+      'score': lm.score,
+      'answers_correct': lm.answersCorrect,
+      'total_rounds': lm.totalRounds,
+      'avg_response_ms': lm.avgResponseMs,
+      'duration_seconds': lm.durationSeconds,
+      'max_streak': lm.maxStreak,
+      'winner_username': lm.winnerUsername,
+    }).toList());
+    await prefs.setString('${key}_match_history_v2', historyJson);
+
+    // Push all stats to MongoDB (fire-and-forget)
+    _pushStatsToServer();
   }
 
   Future<void> _loadLocalStats() async {
@@ -1017,20 +1197,46 @@ class AuthNotifier extends StateNotifier<AuthState> {
     final cachedAlreadyReferred =
         prefs.getBool('${key}_alreadyReferred') ?? false;
 
-    LastMatchData? lastMatch;
-    final lmWon = prefs.getBool('${key}_lm_won');
-    if (lmWon != null) {
-      lastMatch = LastMatchData(
-        won: lmWon,
-        rank: prefs.getInt('${key}_lm_rank') ?? 1,
-        score: prefs.getInt('${key}_lm_score') ?? 0,
-        answersCorrect: prefs.getInt('${key}_lm_correct') ?? 0,
-        totalRounds: prefs.getInt('${key}_lm_rounds') ?? 0,
-        avgResponseMs: prefs.getInt('${key}_lm_avgMs') ?? 0,
-        durationSeconds: prefs.getInt('${key}_lm_duration') ?? 0,
-        maxStreak: prefs.getInt('${key}_lm_streak') ?? 0,
-        winnerUsername: prefs.getString('${key}_lm_winner') ?? '',
-      );
+    // Load match history — try new JSON format first, fall back to legacy lm_* keys.
+    List<LastMatchData> matchHistory = [];
+    final historyRaw = prefs.getString('${key}_match_history_v2');
+    if (historyRaw != null) {
+      try {
+        final list = jsonDecode(historyRaw) as List;
+        matchHistory = list.map((m) {
+          final map = m as Map<String, dynamic>;
+          return LastMatchData(
+            won: map['won'] as bool? ?? false,
+            rank: map['rank'] as int? ?? 0,
+            score: map['score'] as int? ?? 0,
+            answersCorrect: map['answers_correct'] as int? ?? 0,
+            totalRounds: map['total_rounds'] as int? ?? 0,
+            avgResponseMs: map['avg_response_ms'] as int? ?? 0,
+            durationSeconds: map['duration_seconds'] as int? ?? 0,
+            maxStreak: map['max_streak'] as int? ?? 0,
+            winnerUsername: map['winner_username'] as String? ?? '',
+          );
+        }).toList();
+      } catch (_) {}
+    }
+    // Backward-compat: migrate single-match lm_* keys to new list format.
+    if (matchHistory.isEmpty) {
+      final lmWon = prefs.getBool('${key}_lm_won');
+      if (lmWon != null) {
+        matchHistory = [
+          LastMatchData(
+            won: lmWon,
+            rank: prefs.getInt('${key}_lm_rank') ?? 1,
+            score: prefs.getInt('${key}_lm_score') ?? 0,
+            answersCorrect: prefs.getInt('${key}_lm_correct') ?? 0,
+            totalRounds: prefs.getInt('${key}_lm_rounds') ?? 0,
+            avgResponseMs: prefs.getInt('${key}_lm_avgMs') ?? 0,
+            durationSeconds: prefs.getInt('${key}_lm_duration') ?? 0,
+            maxStreak: prefs.getInt('${key}_lm_streak') ?? 0,
+            winnerUsername: prefs.getString('${key}_lm_winner') ?? '',
+          ),
+        ];
+      }
     }
 
     state = state.copyWith(
@@ -1044,7 +1250,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       dailyRewardClaimedDate: rewardDate,
       coins: coins,
       bonusGamesRemaining: bonusGames,
-      lastMatch: lastMatch,
+      matchHistory: matchHistory,
       // Referral cache — will be refreshed by _syncReferralFromServer() below
       referralCode: cachedReferralCode,
       referralCount: cachedReferralCount,

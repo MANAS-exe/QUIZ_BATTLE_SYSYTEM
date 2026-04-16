@@ -67,7 +67,7 @@ services:
       REDIS_ADDR: "redis:6379"
       RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"
       MONGO_URI: "mongodb://mongodb:27017"
-      GOOGLE_CLIENT_ID: "719168042393-acjhshba35836lojheenogj9qrps76p3.apps.googleusercontent.com"
+      GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID}"
     depends_on:
       mongodb:  { condition: service_healthy }
       redis:    { condition: service_healthy }
@@ -136,8 +136,8 @@ services:
       PORT: ":8081"
       MONGO_URI: "mongodb://mongodb:27017"
       RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"
-      RAZORPAY_KEY_ID: ""          # set your rzp_test_* key
-      RAZORPAY_KEY_SECRET: ""     # set your Razorpay secret
+      RAZORPAY_KEY_ID: "${RAZORPAY_KEY_ID}"
+      RAZORPAY_KEY_SECRET: "${RAZORPAY_KEY_SECRET}"
     depends_on:
       mongodb:  { condition: service_healthy }
       rabbitmq: { condition: service_healthy }

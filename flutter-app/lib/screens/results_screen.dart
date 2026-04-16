@@ -52,7 +52,15 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     final me = gs.matchEnd;
     if (me == null) return;
     _statsSaved = true;
-    final won = me.winnerUserId == gs.userId;
+
+    // When nobody answered correctly, there is no real winner — don't record
+    // a win even if the server assigned one (it always assigns rank 1 to someone).
+    final totalCorrect =
+        me.finalScores.fold(0, (sum, s) => sum + s.answersCorrect);
+    final isNoCorrectAnswers =
+        totalCorrect == 0 && me.finalScores.isNotEmpty;
+    final won = !isNoCorrectAnswers && me.winnerUserId == gs.userId;
+
     final myScore =
         gs.leaderboard.where((s) => s.userId == gs.userId).firstOrNull;
     ref.read(authProvider.notifier).recordMatchResult(
@@ -68,7 +76,7 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
             avgResponseMs: myScore?.avgResponseMs ?? 0,
             durationSeconds: me.durationSeconds,
             maxStreak: gs.maxAnswerStreak,
-            winnerUsername: me.winnerUsername,
+            winnerUsername: isNoCorrectAnswers ? '' : me.winnerUsername,
           ),
         );
   }
@@ -123,6 +131,12 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
         .where((s) => s.userId == state.userId)
         .firstOrNull;
 
+    final totalCorrect = matchEnd.finalScores.fold(0, (sum, s) => sum + s.answersCorrect);
+    final isNoCorrectAnswers = totalCorrect == 0 && matchEnd.finalScores.isNotEmpty;
+    final isTie = !isNoCorrectAnswers &&
+        matchEnd.finalScores.length > 1 &&
+        matchEnd.finalScores[0].score == matchEnd.finalScores[1].score;
+
     return Column(
       children: [
         Expanded(
@@ -130,9 +144,9 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
             child: Column(
               children: [
                 const SizedBox(height: 32),
-                _buildTrophyHero(isWinner),
+                _buildTrophyHero(isWinner, isTie: isTie, isNoCorrect: isNoCorrectAnswers),
                 const SizedBox(height: 20),
-                _buildWinnerBanner(matchEnd),
+                _buildWinnerBanner(matchEnd, isTie: isTie, isNoCorrect: isNoCorrectAnswers),
                 const SizedBox(height: 20),
                 if (myScore != null) ...[
                   _buildPersonalStats(
@@ -154,15 +168,41 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
 
   // ─── Trophy hero ──────────────────────────────────────────
 
-  Widget _buildTrophyHero(bool isWinner) {
-    final heroColor = isWinner ? _gold : _coral;
+  Widget _buildTrophyHero(bool isWinner, {bool isTie = false, bool isNoCorrect = false}) {
+    final heroColor = isNoCorrect
+        ? Colors.white38
+        : isTie
+            ? _silver
+            : isWinner
+                ? _gold
+                : _coral;
+    final icon = isNoCorrect
+        ? Icons.block_rounded
+        : isTie
+            ? Icons.handshake_rounded
+            : isWinner
+                ? Icons.emoji_events_rounded
+                : Icons.flag_rounded;
+    final headline = isNoCorrect
+        ? 'No Answers'
+        : isTie
+            ? "It's a Tie!"
+            : isWinner
+                ? 'Victory!'
+                : 'Match Over';
+    final subtitle = isNoCorrect
+        ? 'Nobody answered correctly this match'
+        : isTie
+            ? 'Equal scores — well played by all!'
+            : isWinner
+                ? null
+                : 'Better luck next time';
 
     return Column(
       children: [
         Stack(
           alignment: Alignment.center,
           children: [
-            // Outer glow ring
             Container(
               width: 140,
               height: 140,
@@ -178,7 +218,6 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
             )
                 .animate(onPlay: (c) => c.repeat(reverse: true))
                 .scaleXY(begin: 0.9, end: 1.08, duration: 1400.ms),
-            // Inner circle
             Container(
               width: 110,
               height: 110,
@@ -198,13 +237,7 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
                 ),
               ),
               alignment: Alignment.center,
-              child: Icon(
-                isWinner
-                    ? Icons.emoji_events_rounded
-                    : Icons.flag_rounded,
-                color: heroColor,
-                size: 52,
-              ),
+              child: Icon(icon, color: heroColor, size: 52),
             )
                 .animate()
                 .fadeIn(duration: 600.ms)
@@ -217,19 +250,25 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
         ),
         const SizedBox(height: 20),
         Text(
-          isWinner ? 'Victory!' : 'Match Over',
+          headline,
           style: TextStyle(
-              color: isWinner ? _gold : Colors.white,
+              color: isNoCorrect
+                  ? Colors.white38
+                  : isTie
+                      ? _silver
+                      : isWinner
+                          ? _gold
+                          : Colors.white,
               fontSize: 28,
               fontWeight: FontWeight.w800),
         )
             .animate()
             .fadeIn(delay: 400.ms, duration: 400.ms)
             .slideY(begin: 0.2, end: 0, delay: 400.ms),
-        if (!isWinner) ...[
+        if (subtitle != null) ...[
           const SizedBox(height: 6),
           Text(
-            'Better luck next time',
+            subtitle,
             style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.4),
                 fontSize: 14,
@@ -242,43 +281,63 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
 
   // ─── Winner banner ────────────────────────────────────────
 
-  Widget _buildWinnerBanner(MatchEndEvent matchEnd) {
+  Widget _buildWinnerBanner(MatchEndEvent matchEnd, {bool isTie = false, bool isNoCorrect = false}) {
+    final Color bannerColor;
+    final IconData bannerIcon;
+    final String bannerLabel;
+    final String bannerValue;
+
+    if (isNoCorrect) {
+      bannerColor = Colors.white24;
+      bannerIcon = Icons.block_rounded;
+      bannerLabel = 'Result';
+      bannerValue = 'No correct answers';
+    } else if (isTie) {
+      bannerColor = _silver;
+      bannerIcon = Icons.handshake_rounded;
+      bannerLabel = 'Result';
+      bannerValue = "It's a Tie!";
+    } else {
+      bannerColor = _gold;
+      bannerIcon = Icons.emoji_events_rounded;
+      bannerLabel = 'Winner';
+      bannerValue = matchEnd.winnerUsername;
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: [
-              _gold.withValues(alpha: 0.08),
-              _gold.withValues(alpha: 0.04),
+              bannerColor.withValues(alpha: 0.08),
+              bannerColor.withValues(alpha: 0.04),
             ],
           ),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _gold.withValues(alpha: 0.3)),
+          border: Border.all(color: bannerColor.withValues(alpha: 0.3)),
         ),
         child: Row(
           children: [
-            const Icon(Icons.emoji_events_rounded,
-                color: _gold, size: 22),
+            Icon(bannerIcon, color: bannerColor, size: 22),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Winner',
-                    style: TextStyle(
+                  Text(
+                    bannerLabel,
+                    style: const TextStyle(
                         color: Colors.white38,
                         fontSize: 11,
                         fontWeight: FontWeight.w500),
                   ),
                   Text(
-                    matchEnd.winnerUsername,
+                    bannerValue,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        color: _gold,
+                    style: TextStyle(
+                        color: bannerColor,
                         fontSize: 18,
                         fontWeight: FontWeight.w800),
                   ),
@@ -827,8 +886,9 @@ class _StandingRow extends StatelessWidget {
                   ],
                 ),
                 Text(
-                  '${score.answersCorrect} correct · '
-                  '${(score.avgResponseMs / 1000).toStringAsFixed(1)}s avg',
+                  score.answersCorrect == 0
+                      ? 'No correct answers'
+                      : '${score.answersCorrect} correct · ${(score.avgResponseMs / 1000).toStringAsFixed(1)}s',
                   style: const TextStyle(
                       color: Colors.white38, fontSize: 11),
                 ),

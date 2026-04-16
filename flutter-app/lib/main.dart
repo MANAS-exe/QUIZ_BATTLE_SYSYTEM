@@ -14,6 +14,7 @@ import 'screens/quiz_screen.dart';
 import 'screens/results_screen.dart';
 import 'screens/premium_screen.dart';
 import 'screens/spectating_screen.dart';
+import 'screens/tournament_screen.dart';
 import 'services/auth_service.dart';
 import 'services/game_service.dart';
 
@@ -73,6 +74,11 @@ final _router = GoRouter(
       path: '/premium',
       name: 'premium',
       builder: (context, state) => const PremiumScreen(),
+    ),
+    GoRoute(
+      path: '/tournaments',
+      name: 'tournaments',
+      builder: (context, state) => const TournamentScreen(),
     ),
   ],
 

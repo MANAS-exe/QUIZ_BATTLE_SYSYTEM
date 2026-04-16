@@ -339,6 +339,100 @@ Callers omitting the parameter get the existing value (sentinel path). Callers p
 
 ---
 
+## 28. JoinMatchmaking Deleting SubscribeToMatch Channel
+
+**Symptom:** Both players joined the matchmaking pool successfully and the server created a room, but neither player received the `MatchFound` event. Server logs showed `"No subscription for player X — they may have disconnected"` for **both** players even though both had active `SubscribeToMatch` streams.
+
+**Root Cause:** `JoinMatchmaking` (line 92 of `matchmaking.go`) had cleanup code `delete(h.playerChans, req.UserId)` intended to remove stale channels from previous sessions (e.g. "Play Again"). However, `SubscribeToMatch` registers the channel **before** `JoinMatchmaking` is called by the Flutter client. So the sequence was:
+1. Flutter calls `SubscribeToMatch` → channel registered in `playerChans`
+2. Flutter calls `JoinMatchmaking` → **deletes the channel** from `playerChans`
+3. Server creates room → looks up `playerChans` → empty → "No subscription"
+
+**Fix (`matchmaking-service/handlers/matchmaking.go`):** Removed the `delete(h.playerChans, req.UserId)` from `JoinMatchmaking`. Stale channels from previous sessions are safely overwritten by `SubscribeToMatch` itself (which always sets `playerChans[userId] = ch` on each new stream connection).
+
+---
+
+## 29. `panic: send on closed channel` in Matchmaking Broadcasts
+
+**Symptom:** The matchmaking service crashed with `panic: send on closed channel` when a player re-joined matchmaking (e.g. tapped "Play Again"). The entire service restarted, disconnecting all active players.
+
+**Root Cause:** `JoinMatchmaking` called `close(oldCh)` on the previous session's channel before deleting it from the map. However, concurrent goroutines (`broadcastWaitingUpdate`, `tryCreateRoom`) could still hold a reference to the closed channel and attempt to send on it.
+
+**Fix (`matchmaking-service/handlers/matchmaking.go`):** Removed `close(oldCh)` — now just deletes from the map. The old `SubscribeToMatch` goroutine exits via gRPC context cancellation. Added `recover()` guard in `broadcastWaitingUpdate` as extra safety.
+
+---
+
+## 30. Matchmaking Countdown Timer Decreasing by 2 Seconds
+
+**Symptom:** The "Estimated wait" timer on the matchmaking screen decreased by 2 seconds per tick instead of 1.
+
+**Root Cause:** `_startCountdown()` in `matchmaking_screen.dart` created a new `Timer.periodic` without cancelling the previous one. If `_onStartPressed()` was called twice (double-tap or re-entry), two timers ran simultaneously, each decrementing the `waitTimerProvider` by 1 per second — appearing as a 2-second jump.
+
+**Fix (`flutter-app/lib/screens/matchmaking_screen.dart`):** Added `_countdownTimer?.cancel()` at the top of `_startCountdown()` before creating the new timer.
+
+---
+
+## 31. Daily Quota Silently Blocking Matchmaking
+
+**Symptom:** Player could tap "Play Now" and enter the matchmaking lobby, but `JoinMatchmaking` gRPC call silently failed — the player never appeared in the pool. No error message was shown in the UI.
+
+**Root Cause:** `enforceQuotaAndIncrement()` returned `codes.ResourceExhausted` when the free user's `daily_quiz_used >= 5`, but the Flutter matchmaking screen did not display the error to the user. The player sat in the lobby thinking they were searching, while the server had already rejected them.
+
+**Impact:** The other player (who did join successfully) would wait the full 20-second countdown and auto-cancel because the pool never reached 2 players.
+
+**Mitigation:** Reset the user's `daily_quiz_used` in MongoDB. Long-term fix: the matchmaking screen should catch and display `ResourceExhausted` errors from `JoinMatchmaking`.
+
+---
+
+## 32. User Stats Not Persisted to MongoDB (Only SharedPreferences)
+
+**Symptom:** After reinstalling the app or logging in on a new device, all user stats (matches played, matches won, coins, streak, last match details) reset to 0. Only `rating` was preserved.
+
+**Root Cause:** Stats were stored exclusively in Flutter's `SharedPreferences` (local to the device). MongoDB `users` collection only stored `rating`, `username`, and auth fields. There was no mechanism to push stats to the server or pull them on login.
+
+**Fix:**
+- **Backend:** Added `GET /user/stats` and `POST /user/stats` endpoints on the matchmaking service (`matchmaking-service/handlers/user_stats.go`). GET returns all persistent fields; POST uses `$max` for numeric counters (never goes backwards) and `$set` for strings/arrays.
+- **Backend:** `updatePlayerRatings()` in quiz-service now also increments `matches_played` and `matches_won` (for the winner) in MongoDB after every match.
+- **Flutter:** Added `_syncStatsFromServer()` called after every login — fetches all stats from server and merges with local state (takes higher value). Added `_pushStatsToServer()` called fire-and-forget after every `_saveLocalStats()` — pushes all stats to MongoDB including `loginHistory`, `lastMatch` (9 fields), `premiumTrialExpiresAt`, `dailyRewardClaimedDate`, `bonusGamesRemaining`.
+
+**Fields now persisted to MongoDB:** rating, matches_played, matches_won, coins, bonus_games_remaining, current_streak, longest_streak, max_question_streak, login_history, premium_trial_expiry, daily_reward_claimed, lm_won, lm_rank, lm_score, lm_answers_correct, lm_total_rounds, lm_avg_response_ms, lm_duration_seconds, lm_max_streak, lm_winner_username.
+
+---
+
+## 33. Notification Not Triggering for Password-Login Users
+
+**Symptom:** FCM push notifications worked for Google Sign-In users but not for users who logged in with username/password. The device token was never registered with the backend.
+
+**Root Cause:** `_initNotifications()` (which calls `NotificationService.instance.init(token: token)`) was only called in the Google Sign-In login path. The `register()` and `login()` methods in `auth_service.dart` did not call it.
+
+**Fix (`flutter-app/lib/services/auth_service.dart`):** Added `_initNotifications()` call after `_syncReferralFromServer()` in both the `register()` and `login()` methods, matching the Google Sign-In path.
+
+---
+
+## 34. UPI Payment Option Not Showing in Razorpay Checkout
+
+**Symptom:** The Razorpay checkout showed Cards, Netbanking, Wallet, and Pay Later — but no UPI option.
+
+**Root Cause:** Two issues:
+1. `prefill.contact` was set to an empty string. Razorpay's native Android SDK **hides UPI entirely** when the contact field is empty (UPI requires a phone number for collect flow).
+2. A custom `config.display.blocks` structure was included in the checkout options. This is a Razorpay **Standard Checkout (web)** feature that doesn't work with the `razorpay_flutter` native SDK and caused unexpected behavior.
+
+**Fix (`flutter-app/lib/screens/premium_screen.dart`):** Removed the `method` and `config` keys (not needed — the native SDK shows all enabled methods by default). Set `prefill.contact` to a non-empty placeholder value. UPI will now appear on real devices with UPI apps installed. On emulators without Google Pay/PhonePe, Razorpay may still hide UPI (this is a Razorpay SDK limitation, not a code issue).
+
+---
+
+## 35. Logout Not Navigating to Login Screen
+
+**Symptom:** After tapping logout, the user briefly saw the login screen, then was immediately redirected back to the home screen.
+
+**Root Cause:** `logout()` was declared as `void` (not `Future<void>`). The profile screen called it without `await`, then immediately navigated to `/login`. Since the state hadn't been reset yet (`isLoggedIn` was still `true`), GoRouter's redirect guard saw a logged-in user on `/login` and redirected to `/home`.
+
+**Fix:**
+- Changed `logout()` return type from `void` to `Future<void>` in `auth_service.dart`
+- Changed the profile screen to `await ref.read(authProvider.notifier).logout()` before navigating to `/login`
+
+---
+
 ## Architecture: Monolith → 3 Microservices
 
 The project initially shipped as a single Go binary. The spec required three independent services. The split was:

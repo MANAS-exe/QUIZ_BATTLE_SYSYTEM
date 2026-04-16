@@ -1,0 +1,1110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quiz Battle — Technology Deep Dive (Expanded Textbook Edition)</title>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,600;8..60,700&family=JetBrains+Mono:wght@400;500;600&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #faf8f5;
+  --fg: #1a1a18;
+  --accent: #b84000;
+  --accent2: #1a6b4a;
+  --accent3: #2d5aa0;
+  --muted: #6b6560;
+  --border: #d8d2ca;
+  --code-bg: #f0ece6;
+  --card-bg: #ffffff;
+  --highlight: #fff3cd;
+  --danger: #c0392b;
+  --success: #27ae60;
+  --info-bg: #e8f0fe;
+  --warn-bg: #fef3e2;
+  --danger-bg: #fde8e8;
+  --success-bg: #e6f5ec;
+  --diagram-bg: #f5f2ed;
+  --alt-bg: #f8f4ff;
+  --alt-border: #a78bfa;
+  --new-bg: #f0fdf4;
+  --new-border: #22c55e;
+  --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
+  --shadow-lg: 0 4px 24px rgba(0,0,0,0.08);
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: 'Source Serif 4', Georgia, serif;
+  background: var(--bg);
+  color: var(--fg);
+  line-height: 1.78;
+  font-size: 17px;
+  -webkit-font-smoothing: antialiased;
+}
+.page { max-width: 880px; margin: 0 auto; padding: 3rem 2rem 6rem; }
+
+.cover { text-align: center; padding: 4rem 2rem 3rem; border-bottom: 3px double var(--border); margin-bottom: 3rem; }
+.cover h1 { font-size: 2.6rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; margin-bottom: 0.5rem; }
+.cover .subtitle { font-family: 'DM Sans', sans-serif; font-size: 1.05rem; color: var(--muted); margin-bottom: 1.5rem; }
+.cover .meta { font-family: 'DM Sans', sans-serif; font-size: 0.85rem; color: var(--muted); letter-spacing: 0.05em; text-transform: uppercase; }
+
+.toc { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 2rem 2.5rem; margin-bottom: 3rem; box-shadow: var(--shadow); }
+.toc h2 { font-family: 'DM Sans', sans-serif; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); margin-bottom: 1.2rem; }
+.toc ol { list-style: none; counter-reset: toc; }
+.toc > ol > li { counter-increment: toc; margin-bottom: 0.3rem; }
+.toc > ol > li::before { content: counter(toc, decimal-leading-zero) "."; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--accent); margin-right: 0.6rem; }
+.toc a { font-family: 'DM Sans', sans-serif; font-size: 0.95rem; color: var(--fg); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color 0.2s; }
+.toc a:hover { border-bottom-color: var(--accent); }
+.toc .new-badge { font-family: 'DM Sans', sans-serif; font-size: 0.65rem; font-weight: 700; background: var(--new-border); color: white; padding: 0.1rem 0.4rem; border-radius: 3px; margin-left: 0.4rem; vertical-align: middle; text-transform: uppercase; letter-spacing: 0.05em; }
+
+h2.section-num { font-family: 'DM Sans', sans-serif; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.15em; color: var(--accent); margin-top: 4rem; margin-bottom: 0.3rem; }
+h2.section-title { font-size: 2rem; font-weight: 700; margin-bottom: 0.8rem; line-height: 1.25; letter-spacing: -0.01em; }
+h3 { font-size: 1.35rem; font-weight: 600; margin-top: 2.5rem; margin-bottom: 0.6rem; }
+h4 { font-family: 'DM Sans', sans-serif; font-size: 1.05rem; font-weight: 700; margin-top: 1.8rem; margin-bottom: 0.4rem; color: var(--accent2); }
+h5 { font-family: 'DM Sans', sans-serif; font-size: 0.92rem; font-weight: 700; margin-top: 1.4rem; margin-bottom: 0.3rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+p { margin-bottom: 1rem; }
+
+.callout { border-radius: 6px; padding: 1.2rem 1.5rem; margin: 1.5rem 0; font-size: 0.95rem; line-height: 1.65; }
+.callout.definition { background: var(--info-bg); border-left: 4px solid var(--accent3); }
+.callout.analogy { background: var(--success-bg); border-left: 4px solid var(--success); }
+.callout.warning { background: var(--warn-bg); border-left: 4px solid #e67e22; }
+.callout.danger { background: var(--danger-bg); border-left: 4px solid var(--danger); }
+.callout.question { background: #f3eeff; border-left: 4px solid #7c3aed; }
+.callout.usage { background: #fef9e7; border-left: 4px solid #d4ac0d; }
+.callout.internal { background: #fdf2f8; border-left: 4px solid #db2777; }
+.callout.verdict { background: #ecfdf5; border-left: 4px solid #059669; }
+.callout.updated { background: #f0fdf4; border-left: 4px solid #22c55e; }
+.callout-label { font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.4rem; display: block; }
+.callout.definition .callout-label { color: var(--accent3); }
+.callout.analogy .callout-label { color: var(--accent2); }
+.callout.warning .callout-label { color: #e67e22; }
+.callout.danger .callout-label { color: var(--danger); }
+.callout.question .callout-label { color: #7c3aed; }
+.callout.usage .callout-label { color: #d4ac0d; }
+.callout.internal .callout-label { color: #db2877; }
+.callout.verdict .callout-label { color: #059669; }
+.callout.updated .callout-label { color: #16a34a; }
+
+.alt-box {
+  background: var(--alt-bg);
+  border: 1px solid var(--alt-border);
+  border-radius: 8px;
+  padding: 1.5rem 1.8rem;
+  margin: 1.5rem 0;
+}
+.alt-box .alt-title {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #6d28d9;
+  margin-bottom: 0.6rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.alt-box .alt-title::before { content: "⚖"; font-size: 1.2rem; }
+.alt-box p { font-size: 0.93rem; margin-bottom: 0.8rem; }
+.alt-box p:last-child { margin-bottom: 0; }
+
+.new-box {
+  background: var(--new-bg);
+  border: 1px solid var(--new-border);
+  border-radius: 8px;
+  padding: 1.5rem 1.8rem;
+  margin: 1.5rem 0;
+}
+.new-box .new-title {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #16a34a;
+  margin-bottom: 0.6rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.new-box .new-title::before { content: "✦"; font-size: 1rem; }
+.new-box p { font-size: 0.93rem; margin-bottom: 0.8rem; }
+.new-box p:last-child { margin-bottom: 0; }
+
+code { font-family: 'JetBrains Mono', monospace; font-size: 0.82em; background: var(--code-bg); padding: 0.15em 0.4em; border-radius: 4px; color: var(--accent); }
+pre { background: #1e1e1e; color: #d4d4d4; border-radius: 8px; padding: 1.3rem 1.5rem; overflow-x: auto; margin: 1.2rem 0; font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; line-height: 1.6; box-shadow: var(--shadow); }
+pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+.kw { color: #569cd6; } .str { color: #ce9178; } .cm { color: #6a9955; } .fn { color: #dcdcaa; } .num { color: #b5cea8; } .ty { color: #4ec9b0; }
+
+table { width: 100%; border-collapse: collapse; margin: 1.2rem 0; font-family: 'DM Sans', sans-serif; font-size: 0.88rem; }
+th { background: var(--fg); color: white; text-align: left; padding: 0.7rem 1rem; font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; }
+td { padding: 0.6rem 1rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+tr:nth-child(even) td { background: rgba(0,0,0,0.015); }
+td.new { background: #f0fdf4 !important; }
+
+.diagram-box { background: var(--diagram-bg); border: 1px solid var(--border); border-radius: 8px; padding: 2rem; margin: 1.5rem 0; overflow-x: auto; }
+.diagram-box pre { background: transparent; color: var(--fg); box-shadow: none; padding: 0; margin: 0; font-size: 0.78rem; line-height: 1.5; }
+.diagram-box pre code { color: var(--fg); }
+.diagram-caption { font-family: 'DM Sans', sans-serif; font-size: 0.78rem; color: var(--muted); text-align: center; margin-top: 0.8rem; font-style: italic; }
+
+.flow-steps { list-style: none; counter-reset: flow; margin: 1rem 0; }
+.flow-steps li { counter-increment: flow; position: relative; padding-left: 2.5rem; margin-bottom: 0.8rem; font-size: 0.95rem; }
+.flow-steps li::before { content: counter(flow); position: absolute; left: 0; top: 0.05rem; width: 1.6rem; height: 1.6rem; background: var(--accent); color: white; font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: 0.75rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+
+.tech-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
+.tech-header h3 { margin: 0; }
+.tag { font-family: 'DM Sans', sans-serif; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; padding: 0.15rem 0.5rem; border-radius: 3px; display: inline-block; }
+.tag-lang { background: #e0f2fe; color: #0369a1; }
+.tag-db { background: #e6f5ec; color: #166534; }
+.tag-infra { background: #fef3e2; color: #92400e; }
+.tag-proto { background: #f3eeff; color: #7c3aed; }
+.tag-mobile { background: #fdf2f8; color: #db2877; }
+.tag-payment { background: #fde8e8; color: #c0392b; }
+.tag-cloud { background: #e8f0fe; color: #1d4ed8; }
+.tag-new { background: #dcfce7; color: #15803d; }
+
+hr.section-break { border: none; border-top: 1px solid var(--border); margin: 3rem 0; }
+strong { font-weight: 600; }
+
+.vs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; }
+.vs-card { border: 1px solid var(--border); border-radius: 6px; padding: 1rem 1.2rem; background: var(--card-bg); }
+.vs-card h5 { margin-top: 0; }
+.vs-card p { font-size: 0.9rem; margin-bottom: 0.5rem; }
+@media (max-width: 700px) {
+  .vs-grid { grid-template-columns: 1fr; }
+  .page { padding: 1.5rem 1rem 4rem; }
+  .cover h1 { font-size: 2rem; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- ─────────────── COVER ─────────────── -->
+<div class="cover">
+  <h1>Technology Deep Dive</h1>
+  <div class="subtitle">Expanded Textbook Edition — Every Technology Used AND Every Alternative Explained</div>
+  <div class="meta">14 Primary Technologies · 20+ Alternatives Explained · From First Principles · Updated April 2026</div>
+</div>
+
+<!-- ─────────────── TOC ─────────────── -->
+<div class="toc">
+  <h2>Table of Contents</h2>
+  <ol>
+    <li><a href="#t1">Go (Golang) — with Node.js, Java, Python explained</a></li>
+    <li><a href="#t2">gRPC &amp; Protocol Buffers — with REST, JSON, WebSockets explained</a></li>
+    <li><a href="#t3">Redis — with Memcached, In-Process Memory explained</a></li>
+    <li><a href="#t4">RabbitMQ — with Apache Kafka, Redis Pub/Sub, Direct gRPC explained</a></li>
+    <li><a href="#t5">MongoDB — with PostgreSQL, MySQL explained</a></li>
+    <li><a href="#t6">Flutter &amp; Dart — with React Native, Native (Kotlin/Swift) explained</a></li>
+    <li><a href="#t7">Riverpod — with BLoC, Provider, GetX explained</a></li>
+    <li><a href="#t8">Docker &amp; Docker Compose — with Virtual Machines, Bare Metal explained</a></li>
+    <li><a href="#t9">JWT — with Session Cookies, OAuth Tokens explained</a></li>
+    <li><a href="#t10">OAuth 2.0 &amp; Google Sign-In — with SAML, custom auth explained</a></li>
+    <li><a href="#t11">Razorpay — with Stripe, PayU, direct bank integration explained</a></li>
+    <li><a href="#t12">Firebase Cloud Messaging (FCM) — with APNs, OneSignal, self-hosted explained</a></li>
+    <li><a href="#t13">bcrypt — with SHA-256, Argon2, scrypt, PBKDF2 explained</a></li>
+    <li><a href="#t14">Client Resilience &amp; Reconnection Architecture <span class="new-badge">New</span></a></li>
+  </ol>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 1: GO -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section-num" id="t1">Technology 01</h2>
+<div class="tech-header">
+  <h2 class="section-title">Go (Golang)</h2>
+  <span class="tag tag-lang">Language</span>
+  <span class="tag tag-infra">Backend</span>
+</div>
+
+<h3>What Is Go?</h3>
+<p>Go is a statically typed, compiled programming language designed at Google by Robert Griesemer, Rob Pike, and Ken Thompson. Publicly announced in 2009, version 1.0 arrived in 2012. Go was created to solve problems Google faced with large-scale development: slow C++ compilation, complex Java dependency management, and the difficulty of writing safe concurrent programs.</p>
+<p>Go compiles directly to machine code — a single static binary with no external dependencies. No virtual machine, no interpreter, no runtime library to install. You compile, copy the binary to any compatible machine, and it runs.</p>
+
+<div class="callout definition">
+  <span class="callout-label">Formal Definition</span>
+  Go is an imperative, concurrent, garbage-collected programming language with strong static typing, structural subtyping (interfaces), and first-class functions. It targets systems programming with an emphasis on simplicity, readability, and efficient concurrency through goroutines and channels.
+</div>
+
+<h3>Key Concepts</h3>
+
+<h4>1. Static Typing &amp; Compilation</h4>
+<p>In a <strong>statically typed</strong> language, every variable has a type known at compile time. If you declare <code>var x int = 5</code>, the compiler knows <code>x</code> is an integer. Trying <code>x = "hello"</code> produces a compile-time error — the bug is caught before the program ever runs. <strong>Compilation</strong> means translating source code into machine code once (at build time), so the CPU can execute it directly.</p>
+
+<div class="callout analogy">
+  <span class="callout-label">Analogy</span>
+  <strong>Compiled (Go, C)</strong> = Translating a full book from Hindi to English once, then distributing the English version. Anyone reads it instantly.<br>
+  <strong>Interpreted (Python, JS)</strong> = Hiring a live translator who reads each Hindi sentence aloud and translates on the spot. Faster to start, slower overall, and you need the translator every time.
+</div>
+
+<h4>2. Goroutines — Lightweight Concurrency</h4>
+<p>A <strong>goroutine</strong> is a lightweight thread of execution managed by the Go runtime, not the operating system. You start one by writing <code>go functionName()</code>. The Go runtime multiplexes thousands of goroutines onto a small number of OS threads using an <strong>M:N scheduling model</strong>. A goroutine starts with only <strong>~2 KB</strong> of stack space (versus ~1 MB for an OS thread). The stack grows and shrinks dynamically — you can run millions of goroutines on a single machine.</p>
+
+<div class="callout analogy">
+  <span class="callout-label">Analogy</span>
+  <strong>OS Threads</strong> = Hiring a full chef per order. Each needs their own workstation, knife set, and stove burner. You fit maybe 8 chefs in the kitchen.<br>
+  <strong>Goroutines</strong> = 8 chefs (OS threads) but 500 order tickets (goroutines) on a rail. Each chef picks up a ticket, works on it, puts it back when waiting (water to boil), and picks up the next. The kitchen manager (Go scheduler) coordinates.
+</div>
+
+<h4>3. Channels — Communication Between Goroutines</h4>
+<p>A <strong>channel</strong> is a typed conduit for sending and receiving values between goroutines. For unbuffered channels, the sender blocks until a receiver is ready, and vice versa. This synchronized communication eliminates the need for explicit locks in many cases.</p>
+
+<pre><code>ch := <span class="kw">make</span>(<span class="kw">chan</span> <span class="kw">int</span>)       <span class="cm">// unbuffered channel of ints</span>
+<span class="kw">go func</span>() { ch <- <span class="num">42</span> }()  <span class="cm">// goroutine sends (blocks until received)</span>
+value := <-ch               <span class="cm">// main goroutine receives (blocks until sent)</span></code></pre>
+
+<h4>4. sync.Once — Execute Exactly Once</h4>
+<p><code>sync.Once</code> guarantees a function runs exactly once, regardless of how many goroutines call it concurrently. Internally: atomic flag + mutex. The first caller executes the function and sets the flag; all subsequent callers return immediately.</p>
+
+<div class="callout updated">
+  <span class="callout-label">Usage in Quiz Battle — Current State</span>
+  <strong>5 backend services</strong>, each a compiled Go binary: Matchmaking (gRPC :50051 / HTTP :8080), Quiz Engine (gRPC :50052), Scoring (gRPC :50053), Payment (HTTP :8081), Notification Worker (background consumer + cron scheduler). The goroutine-per-player model handles concurrent gRPC streams. <code>sync.Once</code> ensures only one game loop starts per room. <strong>HTTP handlers (matchmaking-service):</strong> <code>/auth/google</code>, <code>/referral/*</code>, <code>/device/token</code>, <code>/user/stats</code>, <code>/user/change-password</code> (new — JWT-authenticated password update), <code>/tournament/*</code>, <code>/leaderboard</code>. <strong>Password management:</strong> bcrypt hashing on registration; seed script uses upsert semantics so re-running it resets any test user's password to <code>speakx123</code> — the canonical dev-recovery tool.
+</div>
+
+<h3>The Rejected Alternatives</h3>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: Node.js</div>
+  <p><strong>What it is:</strong> Node.js is a JavaScript runtime built on Chrome's V8 engine. It uses an <strong>event-driven, non-blocking I/O model</strong> with a single-threaded event loop. When an I/O operation starts, Node registers a callback and moves on. When I/O completes, the callback is queued and executed when the main thread is free.</p>
+  <p><strong>Why it wasn't chosen:</strong> Quiz Battle's game server does CPU-intensive timer management (30 timer ticks per room per round) and concurrent stream management. On a single-threaded event loop, computing scores for 10 players blocks timer ticks for all other rooms. Node's worker threads could help but add complexity equivalent to Go's goroutines without the language-level elegance. JavaScript's dynamic typing means type mismatches in gRPC messages are caught at runtime, not compile time.</p>
+  <p><strong>When Node.js IS the right choice:</strong> REST APIs with mostly I/O-bound operations, real-time chat with socket.io, rapid prototyping, serverless functions.</p>
+</div>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: Java (Spring Boot)</div>
+  <p><strong>What it is:</strong> Java compiles to bytecode executed by the JVM. Spring Boot is the dominant Java microservices framework. The JVM uses a Just-in-Time (JIT) compiler to convert hot code paths to native code at runtime. Java uses OS-level threads (~1 MB stack each). Modern Java 21+ introduced Virtual Threads (Project Loom) — lightweight threads similar to goroutines, but the ecosystem is still adapting.</p>
+  <p><strong>Why it wasn't chosen:</strong> JVM startup takes 2–5 seconds (Spring Boot: 5–15 seconds); Go starts in under 100ms. Docker images are 200–400 MB (JDK + fat JAR) versus 10–20 MB for Go. Spring Boot's annotation-driven DI adds boilerplate for simple microservices.</p>
+  <p><strong>When Java IS the right choice:</strong> Large enterprise systems with complex business logic, teams with existing Java expertise, long-running applications where JIT warm-up is amortised.</p>
+</div>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: Python (FastAPI / Django)</div>
+  <p><strong>What it is:</strong> Python is dynamically typed and interpreted. The critical limitation is the <strong>Global Interpreter Lock (GIL)</strong> — a mutex that allows only one thread to execute Python bytecode at a time, even on a multi-core machine. Python is typically 10–100× slower than Go for CPU-bound operations.</p>
+  <p><strong>Why it wasn't chosen:</strong> The GIL prevents true parallelism — 10 concurrent scoring operations would run sequentially. Dynamic typing means gRPC schema mismatches surface at runtime. Unacceptable latency for a real-time game server.</p>
+  <p><strong>When Python IS the right choice:</strong> Machine learning (PyTorch, TensorFlow), scripting, rapid prototyping, I/O-dominated workloads.</p>
+</div>
+
+<div class="callout verdict">
+  <span class="callout-label">Final Verdict — Why Go</span>
+  Go gives the best combination for a real-time game server: compiled speed, goroutines for per-player concurrency, first-class gRPC support, small Docker images (15 MB vs 300 MB for Java), and fast compilation (~3 seconds per service). 5 services, 14 HTTP endpoints, one language.
+</div>
+
+<hr class="section-break">
+
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 2: gRPC -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section-num" id="t2">Technology 02</h2>
+<div class="tech-header">
+  <h2 class="section-title">gRPC &amp; Protocol Buffers</h2>
+  <span class="tag tag-proto">Protocol</span>
+  <span class="tag tag-infra">Communication</span>
+</div>
+
+<h3>What Is RPC?</h3>
+<p>Remote Procedure Call lets a program on one computer execute a function on another as if it were local. The caller sends parameters over the network, the remote machine executes the function, and the result is returned. The key insight is <strong>location transparency</strong>: the programmer writes <code>result = server.CalculateScore(answer)</code> without knowing if it runs locally or across the network.</p>
+
+<h3>What Is gRPC?</h3>
+<p>gRPC is Google's open-source, high-performance RPC framework (released 2015, now a CNCF project). It uses <strong>HTTP/2</strong> for transport and <strong>Protocol Buffers (Protobuf)</strong> for serialisation.</p>
+
+<h4>HTTP/2 — The Transport Layer</h4>
+<p>HTTP/1.1 allows only one request per TCP connection at a time (head-of-line blocking). HTTP/2 introduces <strong>multiplexing</strong>: a single TCP connection carries many requests and responses simultaneously as independent streams. This is essential for gRPC streaming — one connection carries a continuous flow of game events without blocking.</p>
+
+<h4>Protocol Buffers — The Serialisation Format</h4>
+<p>You define schemas in <code>.proto</code> files; the Protobuf compiler generates typed code in Go, Dart, Java, etc. The wire format is compact binary — fields are identified by number (not name), making it 3–10× smaller than JSON. Identical passwords produce different hashes because the salt is unique.</p>
+
+<pre><code><span class="kw">syntax</span> = <span class="str">"proto3"</span>;
+
+<span class="kw">service</span> <span class="fn">QuizService</span> {
+  <span class="kw">rpc</span> <span class="fn">SubmitAnswer</span>(<span class="fn">SubmitAnswerRequest</span>) <span class="kw">returns</span> (<span class="fn">SubmitAnswerResponse</span>);
+  <span class="kw">rpc</span> <span class="fn">StreamGameEvents</span>(<span class="fn">StreamRequest</span>) <span class="kw">returns</span> (<span class="kw">stream</span> <span class="fn">GameEvent</span>);
+}</code></pre>
+
+<h4>The Four gRPC Patterns</h4>
+<table>
+  <tr><th>Pattern</th><th>Client → Server</th><th>Server → Client</th><th>Quiz Battle Usage</th></tr>
+  <tr><td><strong>Unary</strong></td><td>1 message</td><td>1 message</td><td><code>SubmitAnswer</code>, <code>Register</code>, <code>Login</code></td></tr>
+  <tr><td><strong>Server-Streaming</strong></td><td>1 message</td><td>Many over time</td><td><code>StreamGameEvents</code>, <code>SubscribeToMatch</code></td></tr>
+  <tr><td><strong>Client-Streaming</strong></td><td>Many messages</td><td>1 at end</td><td>Not used</td></tr>
+  <tr><td><strong>Bidirectional</strong></td><td>Many</td><td>Many</td><td>Not used</td></tr>
+</table>
+
+<div class="callout updated">
+  <span class="callout-label">Usage in Quiz Battle — Current State</span>
+  <code>StreamGameEvents</code> (server-streaming) is the real-time backbone. The server pushes five event types over one persistent HTTP/2 stream: <strong>QuestionBroadcast</strong> (new question each round), <strong>TimerSync</strong> (server-authoritative time correction every second), <strong>RoundResult</strong> (correct answer + fastest player), <strong>LeaderboardUpdate</strong> (score changes), <strong>MatchEnd</strong> (final rankings + winner). <strong>Late-joiner catch-up:</strong> when a player reconnects mid-round, <code>gameRoom.currentQuestion</code> stores the active question event so the server can send it to any new subscriber immediately. <strong>Reconnect dedup guard:</strong> the Flutter client's <code>_onQuestion</code> handler checks if it is already displaying the same round and question ID before resetting state — prevents the catch-up event from restarting the timer and clearing the player's already-submitted answer.
+</div>
+
+<h3>The Rejected Alternatives</h3>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: REST (Representational State Transfer)</div>
+  <p><strong>What it is:</strong> REST uses standard HTTP methods (GET, POST, PUT, DELETE) on resource URLs. Data is typically JSON. REST is request-response — the client asks, the server answers, the connection closes. For real-time server-push, REST requires polling (client asks repeatedly), wasting bandwidth and adding latency. No built-in schema contract — the server can change JSON structure and break clients without compile-time warnings.</p>
+  <p><strong>When REST IS the right choice:</strong> Standard web APIs, CRUD applications, public APIs where human-readability matters, browser-based apps.</p>
+</div>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: JSON</div>
+  <p><strong>What it is:</strong> JSON is text-based. A message with <code>userId</code> (10 chars), <code>round</code> (int), <code>answerIdx</code> (int), and <code>timestamp</code> (long) takes ~85 bytes in JSON but ~25 bytes in Protobuf. In Quiz Battle, thousands of messages flow per game session — with 10 players × 10 rounds × multiple event types, JSON overhead accumulates. More critically, JSON has no schema — type mismatches surface at runtime.</p>
+  <p><strong>When JSON IS the right choice:</strong> Public REST APIs, config files, browser-based apps where human readability matters.</p>
+</div>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: WebSockets</div>
+  <p><strong>What it is:</strong> WebSocket (RFC 6455) provides <strong>full-duplex</strong> communication over a single long-lived TCP connection via an HTTP Upgrade handshake. Either side can send frames at any time. However, WebSocket is a raw pipe — no concept of request/response, no method names, no status codes, no error handling. You must design your own message protocol on top. WebSocket also has no built-in multiplexing (one WebSocket = one stream), while HTTP/2 multiplexes many logical streams over one TCP connection.</p>
+  <p><strong>When WebSockets ARE the right choice:</strong> Browser-based real-time apps (gRPC doesn't work in browsers without grpc-web proxy), chat applications, collaborative editing, live dashboards.</p>
+</div>
+
+<div class="diagram-box">
+<pre><code>REST (HTTP/1.1):
+  Client ──[Request]───► Server ──[Response]───► Client   (then connection idles or closes)
+  Client ──[Request]───► Server ──[Response]───► Client   (repeat for every question)
+
+WebSocket:
+  Client ──[HTTP Upgrade]───► Server ──[101 Switch]───► Client
+  Client ◄──────────────────────────────────────────── Server  (open pipe, raw frames)
+
+gRPC Server-Streaming (HTTP/2):
+  Client ──[StreamRequest]───► Server
+  Client ◄── [QuestionBroadcast] ─── Server
+  Client ◄── [TimerSync (29s)] ────── Server
+  Client ◄── [TimerSync (28s)] ────── Server
+  Client ◄── [RoundResult] ────────── Server
+  Client ◄── [LeaderboardUpdate] ──── Server
+  ... (all on one HTTP/2 stream, type-safe Protobuf messages)
+
+On reconnect (ReconnectService — see Technology 14):
+  Client ──[StreamGameEvents again]──► Server   (addSub called, new channel)
+  Client ◄── [currentQuestion catch-up] ──────── Server   (if mid-round)
+  Client ◄── [TimerSync] ─────────────────────── Server   (resumes stream)
+  (Flutter dedup guard skips question if already showing same round+questionId)</code></pre>
+  <div class="diagram-caption">Figure — REST vs WebSocket vs gRPC streaming, including reconnect path</div>
+</div>
+
+<div class="callout verdict">
+  <span class="callout-label">Final Verdict — Why gRPC</span>
+  gRPC provides a type-safe schema (Protobuf), native streaming (no custom protocol design), binary encoding (3–10× smaller than JSON), auto-generated client/server code, and one unified protocol for both request-response and streaming. The reconnect architecture (Technology 14) wraps the stream with automatic recovery — making the combination robust for a mobile game on unreliable networks.
+</div>
+
+<hr class="section-break">
+
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 3: REDIS -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section-num" id="t3">Technology 03</h2>
+<div class="tech-header">
+  <h2 class="section-title">Redis</h2>
+  <span class="tag tag-db">Database</span>
+  <span class="tag tag-infra">In-Memory</span>
+</div>
+
+<h3>What Is Redis?</h3>
+<p>Redis (Remote Dictionary Server) is an open-source, in-memory data structure store created by Salvatore Sanfilippo in 2009. It stores data entirely in RAM, making it orders of magnitude faster than disk-based databases: a typical operation completes in <strong>under 1 millisecond</strong>. Redis supports rich data structures: strings, hashes, lists, sets, sorted sets, streams, and more.</p>
+
+<div class="callout definition">
+  <span class="callout-label">Formal Definition</span>
+  Redis is a networked, single-threaded (command execution), in-memory data structure server supporting persistence to disk, replication, Lua scripting, LRU eviction, transactions, pub/sub messaging, and cluster mode. It exposes a command-based protocol (RESP) over TCP.
+</div>
+
+<h4>Key Data Structures Used</h4>
+<p><strong>Sorted Sets:</strong> Members with floating-point scores, kept in ascending order. Implemented as a skip list + hash table. Used for matchmaking pool (score = rating) and leaderboards (score = game points).</p>
+<p><strong>Hashes:</strong> Field-value maps under a single key. Used for player data per room and idempotency guards (HEXISTS checks if a player already answered this round).</p>
+<p><strong>Lists:</strong> Ordered collections (doubly-linked list). <code>LPOP</code> is used per round to destructively consume question IDs — guaranteeing each question appears exactly once within a match.</p>
+<p><strong>Strings with SETNX:</strong> Set only if key doesn't exist. Used for distributed locks and round-completion guards — prevents two goroutines from concurrently ending the same round.</p>
+<p><strong>Lua Scripts:</strong> Atomic multi-command execution on the Redis server. Used for leaderboard update (ZINCRBY + EXPIRE + ZREVRANK in one atomic operation).</p>
+
+<div class="callout updated">
+  <span class="callout-label">Usage in Quiz Battle — Current State</span>
+  Redis holds all ephemeral game state. Every key has a 30-minute TTL for automatic cleanup. Key namespaces:
+  <ul style="margin: 0.5rem 0 0.5rem 1.2rem; font-size: 0.93rem;">
+    <li><code>matchmaking:pool</code> — sorted set of waiting players (score = rating)</li>
+    <li><code>player:{userId}</code> — hash of username, rating, joined_at</li>
+    <li><code>room:{roomId}:*</code> — questions list, players hash, leaderboard sorted set, round locks</li>
+    <li><code>answer:{roomId}:{round}:{userId}</code> — idempotency guard (SETNX prevents double-scoring)</li>
+    <li><code>user:{userId}:daily_quota</code> — remaining free games today (mirrors MongoDB for fast quota checks)</li>
+    <li><code>user:{userId}:plan</code> — "premium" or free (fast plan gate without MongoDB round-trip)</li>
+    <li><code>matchmaking_create</code> — distributed lock preventing two goroutines from creating rooms simultaneously</li>
+  </ul>
+  Redis is the <em>fast scratchpad</em>; MongoDB is the <em>permanent filing cabinet</em>.
+</div>
+
+<h3>The Rejected Alternatives</h3>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: Memcached</div>
+  <p><strong>What it is:</strong> Memcached stores data as flat key-value pairs where values are opaque byte blobs. It uses a slab allocator and LRU eviction. Memcached is <strong>multi-threaded</strong>, giving it an edge in raw throughput on multi-core machines.</p>
+  <p><strong>What Memcached CANNOT do:</strong> No sorted sets (needed for leaderboards), no hashes (needed for player data), no lists (needed for question queues), no atomic multi-step Lua scripts, no persistence, and no pub/sub. To implement a leaderboard you'd fetch all scores to the application, sort in Go, and write back — a multi-step non-atomic process with race conditions.</p>
+  <p><strong>When Memcached IS the right choice:</strong> Simple key-value caching (session data, API responses), especially at extreme scale where multi-threaded performance matters more than data structure richness.</p>
+</div>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: In-Process Memory (Go maps / sync.Map)</div>
+  <p><strong>The fundamental problem — shared nothing:</strong> The Matchmaking service adds players to the pool; the Quiz Engine reads from the pool. They're separate processes on separate ports (50051 and 50052). Go maps in one process are invisible to another. There's no shared memory between services. You'd need to either merge all services into one monolith or add a custom network protocol to share state — essentially rebuilding Redis.</p>
+  <p><strong>When in-process memory IS the right choice:</strong> Single-process applications, per-request caches, data that doesn't need to be shared across services.</p>
+</div>
+
+<div class="callout verdict">
+  <span class="callout-label">Final Verdict — Why Redis</span>
+  Sub-millisecond latency, rich data structures (sorted sets for leaderboards + matchmaking, lists for question queues, hashes for player data), Lua scripting for atomic operations, built-in TTL for cleanup, and shared access across all 5 services. Also serves as a fast cache for daily quota and plan status to avoid MongoDB round-trips on every matchmaking join.
+</div>
+
+<hr class="section-break">
+
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 4: RABBITMQ -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section-num" id="t4">Technology 04</h2>
+<div class="tech-header">
+  <h2 class="section-title">RabbitMQ</h2>
+  <span class="tag tag-infra">Message Broker</span>
+</div>
+
+<h3>What Is a Message Broker?</h3>
+<p>A message broker receives messages from producers, stores them in queues, and delivers them to consumers. Producers and consumers are decoupled in time (don't need to be online simultaneously), space (don't need to know each other's addresses), and synchronisation (producer doesn't block waiting for consumer).</p>
+
+<h3>What Is RabbitMQ?</h3>
+<p>RabbitMQ is an open-source message broker written in Erlang, implementing the AMQP 0-9-1 protocol. Core concepts: <strong>Exchange</strong> (receives messages and routes them), <strong>Queue</strong> (stores messages until consumed), <strong>Binding</strong> (rule connecting an exchange to a queue), and <strong>Consumer</strong> (receives and processes messages). Quiz Battle uses a single <strong>Topic Exchange</strong> named <code>sx</code>. Topic exchanges route messages based on pattern matching: <code>notification.*</code> matches <code>notification.streak_warning</code> and <code>notification.daily_reward</code>. Messages are acknowledged (ACK) after successful processing or negatively acknowledged (NACK) for retry, with a Dead Letter Queue after repeated failures.</p>
+
+<div class="callout updated">
+  <span class="callout-label">Usage in Quiz Battle — Current State</span>
+  Seven event types flow through the <code>sx</code> topic exchange:
+  <table style="margin: 0.8rem 0; font-size: 0.87rem;">
+    <tr><th>Routing Key</th><th>Producer</th><th>Consumer</th><th>Purpose</th></tr>
+    <tr><td><code>match.created</code></td><td>Matchmaking</td><td>Quiz Engine</td><td>Trigger question selection for a new room</td></tr>
+    <tr><td><code>answer.submitted</code></td><td>Quiz Engine</td><td>Scoring</td><td>Score the player's answer, update leaderboard</td></tr>
+    <tr><td><code>round.completed</code></td><td>Quiz Engine</td><td>Scoring (analytics)</td><td>Round statistics logging</td></tr>
+    <tr><td><code>match.finished</code></td><td>Quiz Engine</td><td>Scoring + Notification Worker</td><td>Persist match history; trigger referral-conversion notification</td></tr>
+    <tr><td><code>notification.streak_warning</code></td><td>Cron scheduler</td><td>Notification Worker</td><td>FCM push: "your streak expires tonight"</td></tr>
+    <tr><td><code>notification.daily_reward</code></td><td>Cron scheduler</td><td>Notification Worker</td><td>FCM push: "your daily reward is ready"</td></tr>
+    <tr><td><code>payment.success</code></td><td>Payment Service</td><td>Matchmaking (quota reset)</td><td>Upgrade user plan in Redis after premium purchase</td></tr>
+  </table>
+  All queues are durable (survive broker restart) and use manual ACK. Failed messages after 3 retries go to <code>sx.dlq</code> for inspection.
+</div>
+
+<h3>The Rejected Alternatives</h3>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: Apache Kafka</div>
+  <p><strong>What it is:</strong> Kafka stores messages in topics divided into partitions — ordered, immutable, append-only logs on disk. Consumers read at their own pace by tracking their offset. Messages are never deleted by consumption — they're retained for a configurable period. Multiple consumers can read the same messages independently.</p>
+  <p><strong>Key architectural difference:</strong> In RabbitMQ, the <em>broker</em> tracks delivery (ACK-based — once ACKed, message is deleted). In Kafka, the <em>consumer</em> tracks its own position (offset). This enables replay but requires managing offsets and Kafka Transactions for exactly-once semantics.</p>
+  <p><strong>Why Kafka wasn't chosen:</strong> Kafka requires ZooKeeper or KRaft for cluster coordination — an additional service to deploy. It shines at millions of messages/second with weeks of retention. Quiz Battle produces hundreds of messages/second with no retention needed. No topic routing flexibility either — you'd need separate topics or consumer-side filtering instead of RabbitMQ's wildcard bindings.</p>
+  <p><strong>When Kafka IS the right choice:</strong> Log aggregation, event sourcing (rebuilding state from history), real-time analytics pipelines, Change Data Capture (CDC), any scenario requiring replay capability.</p>
+</div>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: Redis Pub/Sub</div>
+  <p><strong>The critical limitation — fire and forget:</strong> If no consumer is subscribed when a message is published, the message is lost forever. There is no queue to buffer it. If the scoring service restarts and misses an <code>answer.submitted</code> message, that answer is never scored — silently lost. No ACK/NACK, no retry, no dead letter queue, and no way to ensure exactly-once processing.</p>
+  <p><strong>When Redis Pub/Sub IS the right choice:</strong> Real-time notifications where loss is acceptable (sports scores, stock tickers), cache invalidation broadcasts, inter-process signalling within a single application.</p>
+</div>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: Direct gRPC Calls Between Services</div>
+  <p><strong>Problems with direct calls:</strong> (1) Tight coupling — Quiz Engine must know Scoring Service's address. (2) Synchronous blocking — Quiz Engine waits for scoring before proceeding; 10 simultaneous answers × 50ms each = 500ms stall. (3) No fan-out — <code>match.finished</code> needs to reach Scoring AND Notification Worker; direct calls require the Quiz Engine to call both sequentially. (4) No retry — if Scoring is down, the direct call fails and the answer is lost. (5) Cascade failures — Scoring overload back-pressures to Quiz Engine, freezing all players' timers. All five problems are solved by a message broker.</p>
+  <p><strong>When direct calls ARE the right choice:</strong> Synchronous operations where you need the result immediately (auth checks before proceeding), simple two-service systems with no fan-out, operations where broker latency is unacceptable.</p>
+</div>
+
+<div class="callout verdict">
+  <span class="callout-label">Final Verdict — Why RabbitMQ</span>
+  Per-message ACK/NACK (critical for exactly-once scoring), topic exchange with wildcard routing (flexible fan-out to multiple consumers), dead letter queues (failure isolation), durable message storage (survives restarts), and a management UI (observability during demos). 7 event types, 5 consumers, one broker.
+</div>
+
+<hr class="section-break">
+
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 5: MONGODB -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section-num" id="t5">Technology 05</h2>
+<div class="tech-header">
+  <h2 class="section-title">MongoDB</h2>
+  <span class="tag tag-db">Database</span>
+</div>
+
+<h3>What Is MongoDB?</h3>
+<p>MongoDB is a document-oriented NoSQL database that stores data as flexible, JSON-like documents (BSON — Binary JSON). Each document can have a different structure; there's no rigid schema. Documents are grouped into <strong>collections</strong>. MongoDB supports dynamic schemas, rich queries, secondary indexes, aggregation pipelines, and change streams.</p>
+
+<div class="callout updated">
+  <span class="callout-label">Usage in Quiz Battle — Current State</span>
+  MongoDB stores all persistent data across <strong>eight collections</strong>:
+  <table style="margin: 0.8rem 0; font-size: 0.87rem;">
+    <tr><th>Collection</th><th>Contents</th><th>Key Indexes</th></tr>
+    <tr><td><code>users</code></td><td>username, password_hash, rating, google_id, referral_code, coins, streak, daily_quiz_used, bonus_games_remaining, premium flag</td><td>username (unique), email (sparse), referral_code (unique sparse)</td></tr>
+    <tr><td><code>questions</code></td><td>30 SpeakX-style English questions, difficulty, topic, avgResponseTimeMs</td><td>difficulty, topic</td></tr>
+    <tr><td><code>match_history</code></td><td>room ID, players with scores, question IDs played (for deduplication across matches)</td><td>players.userId, createdAt</td></tr>
+    <tr><td><code>payments</code></td><td>Razorpay order_id, payment_id, signature, user_id, status</td><td>order_id (unique), user_id</td></tr>
+    <tr><td><code>subscriptions</code></td><td>user_id, status (active/expired), expires_at — drives premium gate</td><td>user_id, expires_at</td></tr>
+    <tr><td><code>device_tokens</code></td><td>FCM device token per user — used for push notifications</td><td>user_id (unique)</td></tr>
+    <tr><td><code>referrals</code></td><td>referrer_id, referee_id, status (pending/claimed), coins_awarded</td><td>referrer_id, referee_id (unique — each user referred once)</td></tr>
+    <tr><td><code>tournaments</code></td><td>name, type, status, starts_at, entry_fee, prizes, participants list</td><td>status + starts_at (compound), participants.user_id</td></tr>
+  </table>
+  The flexible schema enabled adding all Phase 2 fields (referral_code, coins, streak, bonus_games_remaining, google_id, premium) without any migration scripts.
+</div>
+
+<h3>The Rejected Alternatives</h3>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: PostgreSQL</div>
+  <p><strong>What it is:</strong> PostgreSQL stores data in rows and columns with a <strong>fixed schema</strong>. It supports full ACID transactions, complex SQL queries with JOINs, foreign keys, and constraints. Uses Write-Ahead Logging (WAL) for durability, MVCC for concurrency, and 8 KB page-based storage on disk.</p>
+  <p><strong>Schema rigidity:</strong> Every row in a table has exactly the same columns. Phase 2 added 8 new fields to the user document. In PostgreSQL, that's 8 ALTER TABLE statements with potential data backfills. In MongoDB, you just start writing documents with the new fields — old documents without them continue to work fine.</p>
+  <p><strong>When PostgreSQL IS the right choice:</strong> Financial systems requiring strict ACID guarantees, complex relationship queries (many-to-many), reporting-heavy systems, and mature projects with stable schemas.</p>
+</div>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: MySQL</div>
+  <p><strong>What it is:</strong> MySQL is the world's most popular open-source relational database. Its InnoDB engine supports ACID transactions and MVCC. MySQL historically prioritised simplicity and speed for read-heavy workloads. PostgreSQL generally has richer features (better JSON support, more index types, materialized views).</p>
+  <p><strong>Why not chosen:</strong> Same schema rigidity issues as PostgreSQL. If a relational database were needed, PostgreSQL would be preferred for its richer feature set.</p>
+</div>
+
+<div class="callout verdict">
+  <span class="callout-label">Final Verdict — Why MongoDB</span>
+  Flexible schema enabled rapid Phase 1→Phase 2 iteration across 8 collections without migration scripts. Documents map naturally to the project's data structures. Trade-off: no multi-document ACID transactions (though MongoDB 4.0+ supports them), no JOINs, less mature tooling for complex analytical queries.
+</div>
+
+<hr class="section-break">
+
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 6: FLUTTER -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section-num" id="t6">Technology 06</h2>
+<div class="tech-header">
+  <h2 class="section-title">Flutter &amp; Dart</h2>
+  <span class="tag tag-mobile">Mobile</span>
+  <span class="tag tag-lang">Language</span>
+</div>
+
+<h3>What Is Flutter?</h3>
+<p>Flutter is Google's UI toolkit for building natively compiled applications for mobile (iOS, Android), web, and desktop from a <strong>single codebase</strong>. Instead of using platform-native UI components, Flutter draws every pixel itself using the <strong>Skia/Impeller</strong> rendering engine. Flutter uses Dart, supports AOT compilation for production and JIT for development (hot reload in under 1 second).</p>
+
+<div class="callout updated">
+  <span class="callout-label">Usage in Quiz Battle — Current State</span>
+  Single codebase for iOS and Android. <strong>11 screens:</strong>
+  <ul style="margin: 0.5rem 0 0.5rem 1.2rem; font-size: 0.93rem;">
+    <li><strong>Login</strong> — username/password or Google Sign-In</li>
+    <li><strong>Home</strong> — daily reward popup (30-day calendar), streak display, quick-join, coin balance</li>
+    <li><strong>Matchmaking</strong> — live lobby with waiting player list, cancel button</li>
+    <li><strong>Quiz</strong> — active round: question card, 4 options, countdown timer ring, leaderboard, reconnect banner</li>
+    <li><strong>Leaderboard</strong> — between-rounds score display with correct answer reveal</li>
+    <li><strong>Results</strong> — final scores, winner banner, "No correct answers" state when all players answer wrong</li>
+    <li><strong>Spectating</strong> — forfeited-player view waiting for match to end</li>
+    <li><strong>Profile</strong> — 5 tabs (PROFILE, LAST MATCH, BADGES, STREAK, REFERRAL) + change-password dialog (lock icon in AppBar) + match history: premium users see last 3 matches, free users see last 1</li>
+    <li><strong>Premium</strong> — Razorpay checkout, subscription status, feature comparison</li>
+    <li><strong>Global Leaderboard</strong> — top players by rating</li>
+    <li><strong>Tournament</strong> — list of upcoming/active tournaments, join flow, entry fee display</li>
+  </ul>
+  <strong>Service layer:</strong> 3 gRPC stubs (Auth, Matchmaking, Quiz), 1 HTTP client (REST endpoints), ReconnectService (exponential backoff — see Technology 14), GoRouter for navigation with auth guards.
+</div>
+
+<h3>The Rejected Alternatives</h3>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: React Native</div>
+  <p><strong>What it is:</strong> React Native renders <strong>actual native platform components</strong>. Originally used a bridge (JS thread → JSON serialisation → native thread). The new architecture (Fabric + JSI) replaces the bridge with direct C++ calls, reducing UI update latency. Still in progressive rollout.</p>
+  <p><strong>Why React Native wasn't chosen:</strong> (1) Animation performance — countdown timer ring, leaderboard reordering, and reward popups require smooth 60fps; Flutter's direct Skia rendering has no JS–native communication overhead. (2) gRPC support is less mature in React Native — requires native module bridges. (3) Dart's AOT compilation catches more issues at build time than TypeScript.</p>
+  <p><strong>When React Native IS the right choice:</strong> Teams with JavaScript/React expertise, apps needing exact native platform look-and-feel, complex native module integrations (Bluetooth, camera), web+mobile code sharing.</p>
+</div>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: Native Development (Kotlin for Android + Swift for iOS)</div>
+  <p><strong>What it is:</strong> Separate apps per platform using official languages and tools. Best performance, full platform API access, and the best debugging tools (Android Studio Profiler, Xcode Instruments).</p>
+  <p><strong>Why it wasn't chosen:</strong> Two codebases to maintain. All game logic (gRPC clients, state management, timer synchronisation, reconnection, daily reward calculations, referral system) would need to be implemented and tested twice. For a project with a deadline, this doubles effort without proportional benefit.</p>
+  <p><strong>When native IS the right choice:</strong> Peak-performance apps (3D games, video editors), deep OS integration (widgets, watch complications), platform-specific UX requirements, large teams with separate iOS/Android expertise.</p>
+</div>
+
+<div class="callout verdict">
+  <span class="callout-label">Final Verdict — Why Flutter</span>
+  One codebase for both platforms halving development effort. Hot reload for rapid iteration. Mature gRPC and Protobuf packages. 11 screens, 5 service connections, zero code duplication between iOS and Android.
+</div>
+
+<hr class="section-break">
+
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 7: RIVERPOD -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section-num" id="t7">Technology 07</h2>
+<div class="tech-header">
+  <h2 class="section-title">Riverpod</h2>
+  <span class="tag tag-mobile">State Management</span>
+</div>
+
+<h3>What Is Riverpod?</h3>
+<p>Riverpod is a reactive caching and dependency injection framework for Flutter/Dart. It uses <strong>providers</strong> — globally declared, lazily evaluated, automatically disposed units of state. A provider holds a value and notifies listeners when it changes. Widgets "watch" providers and automatically rebuild. Riverpod is compile-safe: provider access errors are caught at build time, not runtime.</p>
+
+<div class="callout updated">
+  <span class="callout-label">Usage in Quiz Battle — Current State</span>
+  <strong>AuthNotifier (StateNotifierProvider&lt;AuthState&gt;):</strong> Manages login/logout, userId, token, username, rating, coins, loginStreak, lastLoginDate, isPremium, premiumExpiresAt, matchesPlayed, matchesWon, dailyQuizUsed, bonusGamesRemaining, referralCode, referredByCode, matchHistory (list of up to 3 LastMatchData — premium users see all 3, free users see only 1 in the UI). Key computed getter: <code>isEffectivelyPremium</code> returns true if the server-confirmed premium subscription is active. Methods: login, register, googleSignIn, logout, changePassword, recordMatchResult, syncStatsFromServer, claimDailyReward, syncReferralFromServer. Persists state to SharedPreferences (v2 JSON format for match history).
+  <br><br>
+  <strong>GameNotifier (StateNotifierProvider&lt;GameState&gt;):</strong> Manages active match: phase (idle → matchmaking → starting → inRound → betweenRounds → spectating → finished), currentRound, currentQuestion, selectedAnswerIndex, remainingSeconds, roundExpired, leaderboard, lastRoundResult, matchEnd, currentAnswerStreak, maxAnswerStreak, currentWinStreak, maxWinStreak. The <code>_onQuestion</code> handler has a dedup guard — silently skips the event if already displaying the same round+questionId.
+  <br><br>
+  <strong>ReconnectStateProvider:</strong> Drives the reconnect banner (status, attempt number, countdown). Separate from GameNotifier so the banner rebuilds independently without re-rendering the whole quiz screen.
+</div>
+
+<h3>The Rejected Alternatives</h3>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: BLoC (Business Logic Component)</div>
+  <p><strong>What it is:</strong> BLoC enforces strict unidirectional data flow. UI sends <strong>Events</strong> to the Bloc; the Bloc processes them and emits new <strong>States</strong>; the UI rebuilds. For every feature: an Events sealed class, a States sealed class, and a Bloc class. The UI uses <code>BlocBuilder</code> for rebuilding.</p>
+  <p><strong>Advantages:</strong> Extremely testable, forces separation of UI and logic, great for large teams, built-in stream transformations (debounce, throttle).</p>
+  <p><strong>Why not chosen:</strong> Significant boilerplate — a simple "submit answer" feature requires 4 files and ~80 lines before any business logic. Riverpod's StateNotifier achieves the same with one class and ~20 lines. For Quiz Battle's 2 major state holders, BLoC would triple the class count.</p>
+</div>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: Provider (Legacy Flutter Package)</div>
+  <p><strong>What it is:</strong> Built on Flutter's <code>InheritedWidget</code>. Providers live in the widget tree — accessing a provider that isn't an ancestor throws a <strong>runtime</strong> <code>ProviderNotFoundException</code>. This error surfaces during widget tree refactors and is only caught when the code runs, not at compile time. Riverpod providers are global (no widget tree position dependency), making this error structurally impossible.</p>
+</div>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: GetX</div>
+  <p><strong>What it is:</strong> GetX combines state management, dependency injection, and route management. Variables become reactive with <code>.obs</code>; listeners use <code>Obx(() => ...)</code>. Minimal boilerplate but "magic" implicit DI and global singletons make code harder to test and reason about at scale.</p>
+</div>
+
+<hr class="section-break">
+
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 8: DOCKER -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section-num" id="t8">Technology 08</h2>
+<div class="tech-header">
+  <h2 class="section-title">Docker &amp; Docker Compose</h2>
+  <span class="tag tag-infra">DevOps</span>
+</div>
+
+<h3>What Is Docker?</h3>
+<p>Docker is a platform for building, shipping, and running applications inside containers. A container packages an application with everything it needs: code, runtime, libraries, and system tools. Containers use OS-level virtualisation via Linux <strong>namespaces</strong> (isolation) and <strong>cgroups</strong> (resource limits). Docker Compose orchestrates multiple containers from a single <code>docker-compose.yml</code> file, handling startup order, networking, and volume management.</p>
+
+<div class="callout updated">
+  <span class="callout-label">Usage in Quiz Battle — Current State</span>
+  <strong>9 containers</strong> (8 services + 1 init):
+  <table style="margin: 0.8rem 0; font-size: 0.87rem;">
+    <tr><th>Container</th><th>Image</th><th>Ports</th><th>Role</th></tr>
+    <tr><td>MongoDB</td><td>mongo:7</td><td>27017</td><td>Persistent storage (8 collections)</td></tr>
+    <tr><td>Redis</td><td>redis:7-alpine</td><td>6379</td><td>Ephemeral game state, quotas, locks</td></tr>
+    <tr><td>RabbitMQ</td><td>rabbitmq:3-management</td><td>5672, 15672</td><td>Message broker + management UI</td></tr>
+    <tr><td>matchmaking-service</td><td>Go binary (~15 MB)</td><td>50051 (gRPC), 8080 (HTTP)</td><td>Auth, matchmaking, referrals, tournaments, change-password</td></tr>
+    <tr><td>quiz-service</td><td>Go binary (~15 MB)</td><td>50052 (gRPC)</td><td>Game loop, streaming, scoring trigger</td></tr>
+    <tr><td>scoring-service</td><td>Go binary (~15 MB)</td><td>50053 (gRPC)</td><td>RabbitMQ consumers (answer + match-finished)</td></tr>
+    <tr><td>payment-service</td><td>Go binary (~15 MB)</td><td>8081 (HTTP)</td><td>Razorpay order creation, webhook verification</td></tr>
+    <tr><td>notification-worker</td><td>Go binary (~15 MB)</td><td>—</td><td>FCM dispatcher + cron scheduler</td></tr>
+    <tr><td>mongo-init</td><td>mongo:7 (init only)</td><td>—</td><td>Seeds questions, indexes, tournaments; exits after</td></tr>
+  </table>
+  Multi-stage Dockerfiles: stage 1 compiles Go binary; stage 2 copies binary into Alpine (15 MB total). Health checks on MongoDB, Redis, and RabbitMQ ensure infrastructure starts before services. <code>docker compose up --build</code> brings the full system from zero to running in ~30 seconds.
+</div>
+
+<h3>The Rejected Alternatives</h3>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: Virtual Machines (VMs)</div>
+  <p><strong>How it works:</strong> A hypervisor creates isolated virtual environments, each running its own complete OS (kernel, drivers, system libraries). Hardware virtualisation extensions (Intel VT-x, AMD-V) allow VMs to execute most instructions directly on the CPU.</p>
+  <table style="margin: 0.8rem 0; font-size: 0.87rem;">
+    <tr><th>Aspect</th><th>VM</th><th>Container</th></tr>
+    <tr><td>Startup time</td><td>30s – 2 min</td><td>Milliseconds – seconds</td></tr>
+    <tr><td>Image size</td><td>1–20 GB (full OS)</td><td>10–500 MB (app + deps)</td></tr>
+    <tr><td>Memory overhead</td><td>512 MB – 4 GB per VM</td><td>Megabytes per container</td></tr>
+    <tr><td>Density</td><td>~10 VMs per host</td><td>~100 containers per host</td></tr>
+  </table>
+  <p>Running 9 VMs would require 9–36 GB of RAM just for OS overhead. Containers achieve the same isolation with minimal overhead.</p>
+</div>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: Bare Metal (No Containerisation)</div>
+  <p><strong>Problems:</strong> (1) "Works on my machine" — different Go versions, MongoDB versions between developers. Docker ensures identical environments. (2) Setup complexity — a new developer must install Go, MongoDB, Redis, RabbitMQ, configure environment, seed data — 20 steps vs <code>docker compose up</code>. (3) No cleanup — MongoDB and Redis data linger on your machine after the project. <code>docker compose down -v</code> removes everything atomically.</p>
+</div>
+
+<div class="callout verdict">
+  <span class="callout-label">Final Verdict — Why Docker</span>
+  Lightweight isolation, one-command startup, reproducible environments across machines, and clean teardown. 9 containers, 5 Go services, 3 infrastructure services — all started in the correct dependency order with health checks.
+</div>
+
+<hr class="section-break">
+
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 9: JWT -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section-num" id="t9">Technology 09</h2>
+<div class="tech-header">
+  <h2 class="section-title">JWT (JSON Web Tokens)</h2>
+  <span class="tag tag-proto">Authentication</span>
+</div>
+
+<h3>What Is JWT?</h3>
+<p>A JWT (RFC 7519) is a compact, self-contained token with three Base64URL-encoded parts: <strong>Header</strong> (algorithm), <strong>Payload</strong> (claims like userId, expiration), and <strong>Signature</strong> (HMAC-SHA256 of header+payload using a secret key). JWTs are <strong>stateless</strong>: the server doesn't store sessions — all information needed for verification is in the token itself.</p>
+
+<div class="callout updated">
+  <span class="callout-label">Usage in Quiz Battle — Current State</span>
+  After login (username/password or Google Sign-In), the server issues a JWT containing <code>userId</code> and <code>exp</code>. The Flutter app includes it as <code>Authorization: Bearer &lt;token&gt;</code> in every gRPC call's metadata and every REST HTTP call. <strong>Server-side enforcement:</strong> every gRPC handler extracts userId from the JWT context via <code>middleware.UserIDFromContext(ctx)</code> — never from the request body (prevents impersonation). <strong>New — change-password endpoint:</strong> <code>POST /user/change-password</code> requires a valid JWT; the handler calls <code>auth.ValidateToken(token)</code> to extract userId, then updates <code>password_hash</code> in MongoDB. No old password required — possession of a valid JWT is proof of identity. After a successful password change, the new password is also saved to SharedPreferences so auto-login at next launch still works.
+</div>
+
+<h3>The Rejected Alternatives</h3>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: Server-Side Sessions with Cookies</div>
+  <p><strong>What it is:</strong> The server creates a session record stored in memory or Redis. The client receives an opaque session ID in an HTTP cookie. On every request, the browser automatically sends the cookie. The server looks up the session ID to find user data.</p>
+  <p><strong>Why sessions weren't chosen:</strong> (1) <strong>Stateful</strong> — all 5 services would need access to a shared session store. JWTs are self-contained: any service verifies them independently. (2) <strong>Cookies don't work with gRPC</strong> — gRPC uses HTTP/2 metadata headers, not browser cookies. (3) <strong>Mobile clients</strong> — cookies are a browser concept; mobile apps use token-based auth more naturally.</p>
+  <p><strong>JWT's trade-off — no instant revocation:</strong> With sessions, the server can instantly invalidate a user (delete the session). With JWTs, the token is valid until expiry — you can't revoke without a server-side blacklist (defeating the "stateless" benefit). Acceptable for a quiz game where tokens expire in a few hours.</p>
+</div>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: OAuth 2.0 Opaque Tokens</div>
+  <p><strong>What it is:</strong> Opaque tokens are random strings with no embedded data. To validate one, the resource server must call the authorization server's introspection endpoint — a network request on every API call. JWTs are self-verifiable with a local signature check. No network call needed.</p>
+</div>
+
+<hr class="section-break">
+
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 10: OAUTH -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section-num" id="t10">Technology 10</h2>
+<div class="tech-header">
+  <h2 class="section-title">OAuth 2.0 &amp; Google Sign-In</h2>
+  <span class="tag tag-cloud">Identity</span>
+</div>
+
+<h3>What Is OAuth 2.0?</h3>
+<p>OAuth 2.0 (RFC 6749) is an authorization framework that lets a third-party app access a user's resources on another service without sharing passwords. <strong>OpenID Connect (OIDC)</strong> adds authentication on top: an <strong>ID token</strong> (JWT from Google) contains verified identity claims. Google Sign-In uses OIDC.</p>
+
+<div class="callout usage">
+  <span class="callout-label">Usage in Quiz Battle</span>
+  Flutter calls <code>GoogleSignIn.signIn()</code> → receives Google ID token → sends to <code>POST /auth/google</code> → backend verifies with Google's tokeninfo API → upserts user in MongoDB (creates on first login, updates on return) → issues app JWT. Google-only accounts have an empty <code>password_hash</code> field — they are excluded from the change-password flow.
+</div>
+
+<h3>The Rejected Alternatives</h3>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: SAML (Security Assertion Markup Language)</div>
+  <p><strong>What it is:</strong> SAML is an older (2005) XML-based standard for exchanging authentication data between an identity provider (IdP) and a service provider (SP). It was the dominant enterprise SSO standard before OAuth 2.0/OIDC. Uses verbose XML, is designed for browser-based SSO (not mobile apps), and is much more complex to implement. Google's mobile SDKs use OIDC natively — SAML is not applicable.</p>
+  <p><strong>When SAML IS the right choice:</strong> Enterprise environments (Okta, Active Directory), legacy systems that predate OAuth 2.0, corporate SSO between web applications.</p>
+</div>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: Custom Username/Password Only (No Google)</div>
+  <p><strong>Why both were implemented:</strong> Google Sign-In reduces friction (one tap, no password to remember, verified email, profile picture — reduces drop-off in user onboarding). Custom auth provides a fallback for users who prefer not to link Google accounts. The <code>POST /user/change-password</code> endpoint serves custom-auth users only.</p>
+</div>
+
+<hr class="section-break">
+
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 11: RAZORPAY -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section-num" id="t11">Technology 11</h2>
+<div class="tech-header">
+  <h2 class="section-title">Razorpay</h2>
+  <span class="tag tag-payment">Payment Gateway</span>
+</div>
+
+<h3>What Is Razorpay?</h3>
+<p>Razorpay is an Indian payment gateway (founded 2014) supporting UPI, credit/debit cards, net banking, wallets, and EMI. Test mode with <code>rzp_test_*</code> keys simulates payments without real money. Integration model: backend creates an order via API → Flutter opens checkout SDK → Razorpay processes payment → webhook notifies backend → backend verifies HMAC-SHA256 signature.</p>
+
+<div class="callout usage">
+  <span class="callout-label">Usage in Quiz Battle</span>
+  Payment Service (port 8081, HTTP) creates Razorpay orders, verifies webhook HMAC-SHA256 signatures, creates/updates subscription documents in MongoDB (<code>status: "active"</code>, <code>expires_at</code>), validates referral coupon codes (applies discount), and publishes <code>payment.success</code> to RabbitMQ. Webhook handler is <strong>idempotent</strong> — checks <code>razorpay_payment_id</code> existence before processing to prevent double-crediting. After payment, <code>user:{userId}:plan</code> in Redis is updated to "premium" so subsequent matchmaking quota checks don't require a MongoDB round-trip.
+</div>
+
+<h3>The Rejected Alternatives</h3>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: Stripe</div>
+  <p><strong>What it is:</strong> Stripe (founded 2010) is widely considered the gold standard for developer experience globally. Uses PaymentIntents, Stripe Elements for UI, and webhook signatures (HMAC-SHA256, same as Razorpay).</p>
+  <p><strong>Why not chosen:</strong> Stripe does not support UPI — the dominant payment method in India with over 10 billion transactions/month. The app targets an Indian audience and the project spec required demonstrating Indian payment methods. Stripe also requires a US/EU bank account for payouts.</p>
+  <p><strong>When Stripe IS the right choice:</strong> Global applications, US/EU-focused businesses, projects where developer experience is the top priority, Stripe Connect for marketplaces.</p>
+</div>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: PayU (India)</div>
+  <p><strong>What it is:</strong> PayU is another Indian payment gateway supporting UPI, cards, net banking, and wallets. Owned by Prosus.</p>
+  <p><strong>Why not chosen:</strong> Razorpay has a more developer-friendly experience: cleaner API documentation, better Flutter SDK, simpler test mode setup, and a simpler webhook verification model.</p>
+</div>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: Direct Bank Integration (UPI via NPCI APIs)</div>
+  <p><strong>Why not chosen:</strong> Direct UPI integration requires PSP registration with NPCI (months-long regulatory process), RBI guideline compliance, and direct banking partnerships. Payment gateways like Razorpay abstract all of this. For a student project, this is a non-starter.</p>
+</div>
+
+<hr class="section-break">
+
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 12: FCM -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section-num" id="t12">Technology 12</h2>
+<div class="tech-header">
+  <h2 class="section-title">Firebase Cloud Messaging (FCM)</h2>
+  <span class="tag tag-cloud">Push Notifications</span>
+</div>
+
+<h3>What Is FCM?</h3>
+<p>Firebase Cloud Messaging is Google's free service for sending push notifications to Android, iOS, and web. Your server sends a message to FCM's servers via Firebase Admin SDK, and FCM delivers it to the device. FCM handles maintaining persistent connections to billions of devices — you don't manage any device connections yourself.</p>
+
+<div class="callout usage">
+  <span class="callout-label">Usage in Quiz Battle</span>
+  The <strong>Notification Worker</strong> service (a background Go binary with no HTTP port) consumes from RabbitMQ and dispatches via Firebase Admin SDK. <strong>5 notification types:</strong>
+  <ul style="margin: 0.5rem 0 0.5rem 1.2rem; font-size: 0.93rem;">
+    <li><strong>Streak warning</strong> — cron job fires nightly; finds users with active streaks; sends "Your streak expires tonight!"</li>
+    <li><strong>Daily reward ready</strong> — cron job fires daily at 9 AM; sends "Your reward is waiting!"</li>
+    <li><strong>Premium expiry</strong> — cron job checks subscriptions expiring in 24 hours; sends "Your premium expires tomorrow"</li>
+    <li><strong>Referral conversion</strong> — triggered by <code>match.finished</code> event; when a referred user completes their first match, both referee and referrer get a notification</li>
+    <li><strong>Tournament reminder</strong> — on-demand when a user joins a tournament starting within 1 hour</li>
+  </ul>
+  Flutter registers the FCM device token at login via <code>POST /device/token</code>. The Notification Worker uses multicast for bulk sends (up to 500 tokens per FCM batch limit). iOS notifications are routed through APNs automatically by FCM.
+</div>
+
+<h3>The Rejected Alternatives</h3>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: Apple Push Notification Service (APNs) — Direct</div>
+  <p><strong>What it is:</strong> Every iOS push notification ultimately goes through APNs — even FCM routes iOS notifications through APNs. Direct APNs integration requires a persistent HTTP/2 connection and JWT-based authentication with your Apple Developer key. APNs only covers Apple devices. Using FCM alone covers both platforms — FCM routes iOS notifications through APNs automatically, eliminating the need to manage two separate push systems.</p>
+</div>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: OneSignal</div>
+  <p><strong>What it is:</strong> A third-party service wrapping FCM and APNs with a web dashboard for non-developer notification campaigns, A/B testing, and advanced segmentation.</p>
+  <p><strong>Why not chosen:</strong> Introduces a third-party dependency between your server and the user's device. For a project demonstrating the notification pipeline (RabbitMQ → consumer → FCM), using OneSignal would hide the mechanics. FCM is free and has a Go Admin SDK for direct server-side dispatch.</p>
+</div>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: Self-Hosted Push (WebSocket-Based)</div>
+  <p><strong>Why not chosen:</strong> Only works when the app is in the foreground (WebSocket connection alive). When the app is closed or in the background, the OS kills the WebSocket to save battery. FCM's value is that Google Play Services maintains a single persistent connection for ALL apps on the device — your notification piggybacks on this always-on connection. Replicating this requires OS-level integration that only Google and Apple have.</p>
+</div>
+
+<hr class="section-break">
+
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 13: BCRYPT -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section-num" id="t13">Technology 13</h2>
+<div class="tech-header">
+  <h2 class="section-title">bcrypt</h2>
+  <span class="tag tag-proto">Cryptography</span>
+</div>
+
+<h3>What Is bcrypt?</h3>
+<p>bcrypt is a password hashing function designed by Niels Provos and David Mazières in 1999, based on the Blowfish cipher. Two critical properties: (1) <strong>Automatic salt</strong> — a unique 128-bit random value generated per hash, so identical passwords produce different hashes. (2) <strong>Adjustable cost factor</strong> — a parameter (typically 10–12) controlling the number of iterations (2^cost). Higher cost = slower hashing = harder to brute-force.</p>
+
+<pre><code><span class="cm">// A bcrypt hash:</span>
+$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy
+ ↑  ↑  ↑                      ↑
+ │  │  │                      └── Hash (31 chars)
+ │  │  └── Salt (22 chars, Base64)
+ │  └── Cost factor (10 = 2^10 = 1,024 iterations)
+ └── Algorithm version (2b)</code></pre>
+
+<div class="callout updated">
+  <span class="callout-label">Usage in Quiz Battle — Current State</span>
+  On registration: <code>bcrypt.GenerateFromPassword(password, bcrypt.DefaultCost)</code>. On login: <code>bcrypt.CompareHashAndPassword(storedHash, submittedPassword)</code>. On <code>POST /user/change-password</code>: generates a new bcrypt hash from the submitted new password and calls MongoDB <code>UpdateOne</code> to replace <code>password_hash</code>. Google Sign-In users have an empty <code>password_hash</code> — they authenticate via Google ID token, not bcrypt. <strong>Dev password recovery:</strong> the seed script (<code>cmd/seed/main.go</code>) uses MongoDB <strong>upsert semantics</strong> — re-running it resets the <code>password_hash</code> for all test users (alice, bob, charlie, diana, evan, fiona, manas1, manas2, manas3) to a fresh bcrypt hash of <code>speakx123</code>. This is the canonical tool for recovering from unknown-password situations without any direct hash writes.
+</div>
+
+<h3>The Rejected Alternatives</h3>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: SHA-256 (or any fast hash)</div>
+  <p><strong>Speed — the fatal flaw for password storage:</strong> SHA-256 is designed to be <strong>fast</strong>. A modern GPU (NVIDIA RTX 4090) can compute approximately <strong>20 billion SHA-256 hashes per second</strong>. An attacker can try every 8-character password (lowercase + digits = 2.8 trillion combinations) in about 2 minutes. No salt by default either — identical passwords produce identical hashes, enabling rainbow table attacks. bcrypt at cost 10 takes ~100ms per hash — 100,000× slower for the attacker, with an auto-generated salt defeating rainbow tables.</p>
+  <p><strong>When SHA-256 IS the right choice:</strong> File integrity verification, digital signatures, HMAC (message authentication), blockchain, content-addressable storage (Git) — any scenario where speed is desired and the input is not a secret.</p>
+</div>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: Argon2</div>
+  <p><strong>What it is:</strong> Winner of the Password Hashing Competition (PHC, 2015). Argon2id (the recommended variant) is <strong>memory-hard</strong>: requires a configurable amount of RAM (e.g., 64 MB) per hash in addition to CPU time. This defeats GPU attacks — GPUs have limited per-core memory, so you can't simply add more cores. bcrypt is CPU-hard but not memory-hard.</p>
+  <p><strong>Why not chosen:</strong> bcrypt is more widely supported in Go's standard ecosystem (<code>golang.org/x/crypto/bcrypt</code>). Argon2 requires an additional dependency. For a project not storing millions of passwords under nation-state-level threats, bcrypt at cost 10–12 is more than sufficient for decades.</p>
+  <p><strong>When Argon2 IS the right choice:</strong> New projects starting from scratch (OWASP recommends Argon2id), applications expecting sophisticated attackers, high-value credential stores.</p>
+</div>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: scrypt</div>
+  <p><strong>What it is:</strong> Created by Colin Percival in 2009. Also memory-hard — requires a large pseudo-random array to be kept in RAM during hashing, making GPU attacks expensive. Somewhat superseded by Argon2 as the modern recommendation, but still secure.</p>
+</div>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: PBKDF2</div>
+  <p><strong>What it is:</strong> Defined in RFC 2898 (2000). Applies HMAC-SHA256 repeatedly (NIST recommends 600,000+ iterations as of 2023). Not memory-hard — minimal RAM usage makes it vulnerable to GPU and ASIC attacks even at high iteration counts. Still NIST-approved (FIPS 140-2 compliant), making it required in some regulated environments.</p>
+</div>
+
+<div class="callout verdict">
+  <span class="callout-label">Final Verdict — Why bcrypt</span>
+  Deliberate slowness defeats brute-force, automatic salting defeats rainbow tables, wide Go ecosystem support, and paired with the upsert seed script as the canonical dev-recovery tool. For a new production application starting today, Argon2id would be recommended — but bcrypt remains secure and well-understood.
+</div>
+
+<hr class="section-break">
+
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 14: RECONNECT ARCHITECTURE (NEW) -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section-num" id="t14">Technology 14 <span style="font-size:0.6em; background:#22c55e; color:white; padding:0.1rem 0.4rem; border-radius:3px; margin-left:0.4rem; vertical-align:middle;">NEW</span></h2>
+<div class="tech-header">
+  <h2 class="section-title">Client Resilience &amp; Reconnection Architecture</h2>
+  <span class="tag tag-new">New</span>
+  <span class="tag tag-mobile">Flutter</span>
+  <span class="tag tag-proto">gRPC</span>
+</div>
+
+<h3>The Problem</h3>
+<p>gRPC server-streaming is built on HTTP/2, which is built on TCP. Mobile devices are not on stable connections — they switch between WiFi and mobile data, experience brief packet loss, and have aggressive OS sleep modes that can kill idle TCP connections. When the underlying TCP connection drops, the gRPC stream throws an exception. <strong>There is no built-in reconnection in gRPC streaming</strong> — reconnect is entirely the client's responsibility.</p>
+
+<p>Without reconnection, one 2-second network blip permanently disconnects a player for the rest of the match. The timer freezes on their screen, no events arrive, and they can only watch a stuck UI. This is a catastrophic user experience for a real-time game.</p>
+
+<h3>The Solution: ReconnectService</h3>
+<p><code>ReconnectService</code> (<code>flutter-app/lib/services/reconnect_service.dart</code>) wraps any gRPC game-event stream with automatic exponential-backoff reconnection. It is implemented as an <code>async*</code> generator — a Dart function that <code>yield</code>s events one at a time, transparently hiding the underlying reconnect attempts from the rest of the application.</p>
+
+<pre><code><span class="cm">// Simplified structure of the resilient stream</span>
+<span class="ty">Stream</span>&lt;<span class="ty">GameEvent</span>&gt; _buildResilientStream(...) <span class="kw">async</span>* {
+  <span class="kw">int</span> attempt = <span class="num">0</span>;
+  <span class="kw">while</span> (<span class="kw">true</span>) {
+    <span class="kw">try</span> {
+      <span class="kw">if</span> (attempt > <span class="num">0</span>) {
+        <span class="kw">final</span> leaderboard = <span class="kw">await</span> _catchUpState(roomId); <span class="cm">// restore scores</span>
+        <span class="kw">yield</span> <span class="ty">ReconnectedEvent</span>(leaderboard: leaderboard);
+      }
+      <span class="kw">final</span> source = _gameService.streamGameEvents(roomId, userId); <span class="cm">// new gRPC call</span>
+      <span class="kw">await for</span> (<span class="kw">final</span> event <span class="kw">in</span> source) {
+        attempt = <span class="num">0</span>;          <span class="cm">// reset on any successful event</span>
+        <span class="kw">yield</span> event;
+        <span class="kw">if</span> (event <span class="kw">is</span> <span class="ty">MatchEndEvent</span>) <span class="kw">return</span>; <span class="cm">// legitimate end — stop retrying</span>
+      }
+      <span class="kw">return</span>; <span class="cm">// clean server close — stop retrying</span>
+    } <span class="kw">catch</span> (e) {
+      attempt++;
+      <span class="kw">if</span> (attempt > _maxRetries) { <span class="kw">yield</span> <span class="ty">ReconnectFailedEvent</span>(...); <span class="kw">return</span>; }
+      <span class="kw">yield</span> <span class="ty">ReconnectingEvent</span>(attempt, retryInMs: _backoffDelay(attempt));
+      <span class="kw">yield</span>* _countdownTicks(attempt, delayMs); <span class="cm">// UI countdown updates</span>
+    }
+  }
+}</code></pre>
+
+<h4>Backoff Schedule</h4>
+<table>
+  <tr><th>Attempt</th><th>Wait</th><th>Cumulative</th><th>User Experience</th></tr>
+  <tr><td>1</td><td>1 s</td><td>1 s</td><td>Banner: "Reconnecting… 1/5"</td></tr>
+  <tr><td>2</td><td>2 s</td><td>3 s</td><td>Banner: "Reconnecting… 2/5"</td></tr>
+  <tr><td>3</td><td>4 s</td><td>7 s</td><td>Banner: "Reconnecting… 3/5"</td></tr>
+  <tr><td>4</td><td>8 s</td><td>15 s</td><td>Banner: "Reconnecting… 4/5"</td></tr>
+  <tr><td>5</td><td>16 s</td><td>31 s</td><td>Banner: "Reconnecting… 5/5"</td></tr>
+  <tr><td>>5</td><td>—</td><td>—</td><td>Error: "Connection lost. Please rejoin."</td></tr>
+</table>
+
+<div class="callout definition">
+  <span class="callout-label">Why Exponential Backoff?</span>
+  Linear backoff (retry every 1 second) would flood the server with reconnect attempts during a network outage. Exponential backoff gives the network time to recover and distributes reconnect load over time. The pattern is used everywhere: TCP retransmission, AWS SDK retries, Google Cloud client libraries.
+</div>
+
+<h4>State Catch-Up on Reconnect</h4>
+<p>When a player reconnects mid-match, they've missed events that were broadcast to their old channel (which was removed via <code>removeSub</code> when the stream dropped). The <code>_catchUpState</code> method calls <code>getLeaderboard(roomId)</code> before resuming the event stream — restoring current scores without requiring the server to replay past messages.</p>
+
+<h4>Server-Side: Late-Joiner Catch-Up</h4>
+<p>On the server, every time the game loop broadcasts a question event, it also stores it: <code>room.setCurrentQuestion(event, round, deadlineMs)</code>. When a player reconnects and calls <code>StreamGameEvents</code> again, <code>addSub</code> registers the new channel. The server can then send <code>getCurrentQuestion()</code> immediately to the new subscriber so they see the current question without waiting for the next round to start.</p>
+
+<div class="diagram-box">
+<pre><code>Flutter                          Go (quiz-service)             Network
+  │                                    │
+  │──── StreamGameEvents ─────────────►│  (Stream A opens)
+  │◄── QuestionBroadcast (round 2) ────│
+  │◄── TimerSync (25s) ────────────────│
+  │          [network drops]           │
+  │   gRPC exception thrown            │──ctx.Done()→ removeSub(channelA)
+  │   ReconnectService: catch(e)       │  (player still "active" in game)
+  │   wait 1 second                   │
+  │──── StreamGameEvents ─────────────►│  (Stream B opens — new channel)
+  │   _catchUpState():                 │  addSub(channelB)
+  │   ← getLeaderboard() ─────────────►│  → send currentQuestion catch-up
+  │◄── ReconnectedEvent(scores) ───────│
+  │◄── QuestionBroadcast (round 2) ────│  (catch-up: same question)
+  │
+  │  Flutter: _onQuestion() dedup check:
+  │  state.currentRound == e.roundNumber AND
+  │  state.currentQuestion?.questionId == e.question.questionId
+  │  → SKIP (don't restart timer, don't clear answer)
+  │
+  │◄── TimerSync (18s) ────────────────│  (resumes normally)
+  │◄── RoundResult ────────────────────│
+  │◄── QuestionBroadcast (round 3) ────│  (new round — processed normally)</code></pre>
+  <div class="diagram-caption">Figure — Full reconnect sequence: stream drop, recovery, catch-up, and dedup guard</div>
+</div>
+
+<h4>Question Dedup Guard</h4>
+<p>When the server sends the current question as a catch-up event to the reconnected player, the Flutter client must not treat it as a new question — that would restart the countdown timer and clear the player's already-submitted answer. The fix is a guard in <code>_onQuestion</code>:</p>
+
+<pre><code><span class="kw">void</span> <span class="fn">_onQuestion</span>(<span class="ty">QuestionBroadcastEvent</span> e) {
+  <span class="cm">// Reconnect catch-up guard: server re-sends currentQuestion to late-joiners.</span>
+  <span class="cm">// If already displaying this exact round+question, skip — don't reset timer</span>
+  <span class="cm">// or clear the user's selected answer.</span>
+  <span class="kw">if</span> (state.phase == <span class="ty">MatchPhase</span>.inRound &&
+      state.currentRound == e.roundNumber &&
+      state.currentQuestion?.questionId == e.question.questionId) {
+    debugPrint(<span class="str">'[GameProvider] catch-up duplicate for round ${e.roundNumber}, skipping'</span>);
+    <span class="kw">return</span>;
+  }
+  <span class="cm">// ... normal question processing</span>
+}</code></pre>
+
+<h3>The Rejected Alternatives</h3>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: No Reconnection (Fail Permanently)</div>
+  <p><strong>What happens:</strong> When the stream drops, the GameNotifier's <code>onError</code> or <code>onDone</code> fires. The current code transitions to <code>phase = idle</code> with an error message — effectively kicking the player out of the match. For a 30-minute game session, one brief network blip destroys the entire session. Unacceptable UX for a mobile game.</p>
+</div>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: Fixed-Interval Retry (No Backoff)</div>
+  <p><strong>What it is:</strong> Retry every 1 second regardless of failure count. Simple to implement.</p>
+  <p><strong>Why not chosen:</strong> If the server is down or overloaded, constant 1-second retries from all clients simultaneously creates a thundering herd — all clients reconnect at the same time, overwhelming the server. Exponential backoff spreads reconnect attempts over time, reducing server load during recovery.</p>
+</div>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: WebSocket with Auto-Reconnect Libraries</div>
+  <p><strong>What it is:</strong> Libraries like <code>socket.io-client</code> for Dart/Flutter handle reconnection automatically, with configurable backoff and state restoration hooks.</p>
+  <p><strong>Why not chosen:</strong> The project uses gRPC — switching to WebSocket would require redesigning the entire communication layer, losing Protobuf type safety and auto-generated code. The reconnect complexity is worth it to keep gRPC's benefits. The <code>ReconnectService</code> is 210 lines and achieves the same result.</p>
+</div>
+
+<div class="alt-box">
+  <div class="alt-title">Alternative: Bidirectional gRPC Streaming</div>
+  <p><strong>What it is:</strong> Instead of server-streaming (client opens → server pushes), use bidirectional streaming where both sides send. The client could send a heartbeat ping every 5 seconds; the server could detect missed pings and proactively close/reopen.</p>
+  <p><strong>Why not chosen:</strong> The reconnect problem is a client-side concern — the server doesn't need to know about reconnects. Server-streaming already gives the server the ability to push all necessary events. Bidirectional streaming would add complexity (client-side ping loop, server-side ping timeout logic) without solving the fundamental problem — the client still needs to reconnect when the stream drops.</p>
+</div>
+
+<div class="callout verdict">
+  <span class="callout-label">Final Verdict — Why This Architecture</span>
+  The <code>ReconnectService</code> wraps gRPC streaming with exponential backoff, state catch-up (<code>getLeaderboard</code>), UI feedback (banner with countdown), and clean termination on <code>MatchEndEvent</code>. The server's <code>currentQuestion</code> mechanism enables instant catch-up for reconnected players. The client-side dedup guard prevents the catch-up event from disrupting an in-progress answer. The combination makes the game resilient to mobile network instability with zero changes to any of the 5 Go services.
+</div>
+
+<hr class="section-break">
+
+
+<!-- ─────────────── MASTER SUMMARY ─────────────── -->
+<h2 class="section-num">Master Summary</h2>
+<h2 class="section-title">Every Technology &amp; Every Alternative — At a Glance</h2>
+
+<table>
+  <tr><th>Chosen</th><th>Alternatives Considered</th><th>Key Reason for Choice</th></tr>
+  <tr><td><strong>Go</strong></td><td>Node.js, Java (Spring Boot), Python</td><td>Goroutines for per-player concurrency, compiled speed, 15 MB Docker images, 5 services, 14 HTTP endpoints</td></tr>
+  <tr><td><strong>gRPC + Protobuf</strong></td><td>REST + JSON, WebSockets</td><td>Type-safe schema, native streaming, binary encoding 3–10× smaller, reconnect-compatible</td></tr>
+  <tr><td><strong>Redis</strong></td><td>Memcached, In-process maps, PostgreSQL</td><td>Sorted sets for leaderboards, lists for question queues, Lua scripting, daily quota cache, &lt;1ms latency</td></tr>
+  <tr><td><strong>RabbitMQ</strong></td><td>Apache Kafka, Redis Pub/Sub, Direct gRPC</td><td>Per-message ACK/NACK, topic routing, DLQ, 7 event types across 5 consumers</td></tr>
+  <tr><td><strong>MongoDB</strong></td><td>PostgreSQL, MySQL</td><td>Flexible schema across 8 collections, no migration scripts during Phase 1→2 iteration</td></tr>
+  <tr><td><strong>Flutter + Dart</strong></td><td>React Native, Native (Kotlin/Swift)</td><td>Single codebase for 11 screens on iOS + Android, hot reload, mature gRPC support</td></tr>
+  <tr><td><strong>Riverpod</strong></td><td>BLoC, Provider (legacy), GetX</td><td>Compile-safe, minimal boilerplate, auto-dispose, premium/free match history differentiation</td></tr>
+  <tr><td><strong>Docker + Compose</strong></td><td>Virtual Machines, Bare Metal</td><td>9 containers, one-command startup, reproducible environments, 15 MB Go images</td></tr>
+  <tr><td><strong>JWT</strong></td><td>Server-side sessions, Opaque tokens</td><td>Stateless (self-verifiable across 5 services), works with gRPC metadata, powers change-password endpoint</td></tr>
+  <tr><td><strong>OAuth 2.0 / OIDC</strong></td><td>SAML, Custom-only auth</td><td>Mobile-native, reduces onboarding friction, verified email + profile picture</td></tr>
+  <tr><td><strong>Razorpay</strong></td><td>Stripe, PayU, Direct NPCI</td><td>UPI support, Indian payment methods, free test mode, idempotent webhook handler</td></tr>
+  <tr><td><strong>FCM</strong></td><td>APNs direct, OneSignal, Self-hosted WS</td><td>Free, cross-platform, works when app is closed, 5 notification types via RabbitMQ pipeline</td></tr>
+  <tr><td><strong>bcrypt</strong></td><td>SHA-256, Argon2, scrypt, PBKDF2</td><td>Deliberately slow, auto-salted, wide Go support, upsert seed script for dev recovery</td></tr>
+  <tr class="new-row"><td class="new"><strong>ReconnectService</strong> <span style="font-family:DM Sans,sans-serif;font-size:0.65rem;font-weight:700;background:#22c55e;color:white;padding:0.1rem 0.35rem;border-radius:3px;">NEW</span></td><td class="new">No reconnect, fixed-interval retry, WebSocket libraries, bidirectional gRPC</td><td class="new">Exponential backoff (1→2→4→8→16s), state catch-up via getLeaderboard, reconnect banner, dedup guard prevents timer reset on catch-up events</td></tr>
+</table>
+
+<hr class="section-break">
+<div style="text-align:center; padding: 2rem 0;">
+  <p style="font-family: 'DM Sans', sans-serif; font-size: 0.85rem; color: var(--muted);">
+    Quiz Battle — Technology Deep Dive (Expanded Textbook Edition)<br>
+    14 Primary Technologies · 20+ Alternatives Fully Explained · Updated April 2026<br>
+    Phase 1: Go + gRPC + Redis + RabbitMQ + MongoDB + Flutter + Docker + JWT<br>
+    Phase 2: Razorpay + FCM + OAuth 2.0 + Referral + Daily Rewards + Tournaments<br>
+    Phase 3 Additions: ReconnectService + Change Password + Match History Differentiation
+  </p>
+</div>
+
+</div><!-- end .page -->
+</body>
+</html>

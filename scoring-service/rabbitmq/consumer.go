@@ -26,7 +26,7 @@ const (
 	basePointsMedium = 125
 	basePointsHard   = 150
 	speedBonusMax    = 50
-	speedWindowMs    = 10_000
+	speedWindowMs    = 30_000 // full round duration — bonus decays linearly over 30s
 
 	answersTTLSeconds = 30 * 60
 
@@ -220,9 +220,13 @@ func (c *Consumer) process(ev AnswerEvent) error {
 	if isCorrect {
 		points = basePoints
 		responseMs := ev.SubmittedAtMs - ev.RoundStartedAtMs
+		log.Printf("🔍 Timing — user: %s submitted: %d roundStart: %d responseMs: %d",
+			ev.UserID, ev.SubmittedAtMs, ev.RoundStartedAtMs, responseMs)
 		if responseMs > 0 && responseMs < speedWindowMs {
 			bonus := int(float64(speedBonusMax) * (1 - float64(responseMs)/float64(speedWindowMs)))
 			points += bonus
+			log.Printf("⚡ Speed bonus — user: %s responseMs: %d bonus: +%d total: %d",
+				ev.UserID, responseMs, bonus, points)
 		}
 	}
 
@@ -232,6 +236,10 @@ func (c *Consumer) process(ev AnswerEvent) error {
 	}
 	if responseMs := ev.SubmittedAtMs - ev.RoundStartedAtMs; responseMs > 0 && responseMs < 120_000 {
 		rdb.TrackResponseTime(c.redis, ev.RoomID, ev.UserID, responseMs) //nolint:errcheck
+		// Store per-round response time for fastest-player detection
+		roundTimeKey := fmt.Sprintf("room:%s:round_time:%d", ev.RoomID, ev.RoundNumber)
+		conn.Do("HSET", roundTimeKey, ev.UserID, responseMs)   //nolint:errcheck
+		conn.Do("EXPIRE", roundTimeKey, answersTTLSeconds)       //nolint:errcheck
 	}
 
 	// Update leaderboard

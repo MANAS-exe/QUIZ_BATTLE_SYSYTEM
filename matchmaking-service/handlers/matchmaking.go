@@ -84,13 +84,11 @@ func (h *MatchmakingHandler) JoinMatchmaking(ctx context.Context, req *quiz.Join
 		}
 	}
 
-	// Clean up any stale channel from a previous session (e.g. Play Again)
-	h.mu.Lock()
-	if oldCh, ok := h.playerChans[req.UserId]; ok {
-		close(oldCh)
-		delete(h.playerChans, req.UserId)
-	}
-	h.mu.Unlock()
+	// NOTE: Do NOT delete playerChans here — the SubscribeToMatch stream
+	// may already be registered for this session. Deleting it would cause
+	// "No subscription" when tryCreateRoom tries to deliver MatchFound.
+	// Stale channels from previous sessions are cleaned up by SubscribeToMatch
+	// itself (it overwrites the map entry at line 276).
 
 	conn := h.pool.Get()
 	defer conn.Close()
@@ -185,6 +183,12 @@ func (h *MatchmakingHandler) buildWaitingUpdateEvent() *quiz.MatchEvent {
 
 // broadcastWaitingUpdate sends a WaitingUpdate event to all subscribed players.
 func (h *MatchmakingHandler) broadcastWaitingUpdate() {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("⚠️  broadcastWaitingUpdate recovered from panic: %v", r)
+		}
+	}()
+
 	event := h.buildWaitingUpdateEvent()
 	if event == nil {
 		return
@@ -234,12 +238,11 @@ func (h *MatchmakingHandler) LeaveMatchmaking(ctx context.Context, req *quiz.Lea
 	}
 	conn.Do("DEL", fmt.Sprintf("player:%s", req.UserId)) //nolint:errcheck
 
-	// Cancel any waiting SubscribeToMatch channel for this player
+	// Remove the channel from the map — do NOT close it.
+	// A concurrent broadcastWaitingUpdate goroutine may still hold a reference
+	// and panic on send-to-closed. The SubscribeToMatch defer handles cleanup.
 	h.mu.Lock()
-	if ch, ok := h.playerChans[req.UserId]; ok {
-		close(ch)
-		delete(h.playerChans, req.UserId)
-	}
+	delete(h.playerChans, req.UserId)
 	h.mu.Unlock()
 
 	if removed == 0 {
@@ -280,15 +283,20 @@ func (h *MatchmakingHandler) SubscribeToMatch(req *quiz.SubscribeRequest, stream
 
 	log.Printf("📡 Player %s subscribed to match events", req.UserId)
 
-	// Immediately send the current pool state to this player so they see
-	// who's already waiting (fixes late-joiner not seeing existing players).
+	// Send the current pool state to this player after a short delay.
+	// This handles the case where JoinMatchmaking broadcast fired before
+	// this subscription was registered (common race: join fires before subscribe).
 	go func() {
-		time.Sleep(200 * time.Millisecond) // brief delay to let channel register
+		time.Sleep(500 * time.Millisecond) // give JoinMatchmaking time to complete
 		h.sendWaitingUpdateTo(ch)
 	}()
 
 	ctx := stream.Context()
 	timeout := time.After(matchmakingTimeout)
+	// Periodic ticker: re-broadcast pool state every 3s as a safety net.
+	// Ensures clients catch up even if they miss an event.
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
 
 	for {
 		select {
@@ -309,6 +317,10 @@ func (h *MatchmakingHandler) SubscribeToMatch(req *quiz.SubscribeRequest, stream
 				return nil
 			}
 			// WaitingUpdate — keep looping for more events
+
+		case <-ticker.C:
+			// Periodic refresh — re-send current pool state
+			h.sendWaitingUpdateTo(ch)
 
 		case <-timeout:
 			return stream.Send(&quiz.MatchEvent{
@@ -461,7 +473,7 @@ func (h *MatchmakingHandler) enforceQuotaAndIncrement(ctx context.Context, userI
 		return nil
 	}
 
-	// 2. Look up the user's daily quota fields
+	// 2. Look up the user's daily quota fields + bonus games
 	oid, oidErr := primitive.ObjectIDFromHex(userID)
 	if oidErr != nil {
 		log.Printf("enforceQuota: invalid ObjectID %s: %v", userID, oidErr)
@@ -469,51 +481,68 @@ func (h *MatchmakingHandler) enforceQuotaAndIncrement(ctx context.Context, userI
 	}
 	usersColl := h.mongoDB.Collection("users")
 	var userDoc struct {
-		DailyQuizUsed int    `bson:"daily_quiz_used"`
-		LastQuizDate  string `bson:"last_quiz_date"` // stored as "YYYY-MM-DD"
+		DailyQuizUsed       int    `bson:"daily_quiz_used"`
+		LastQuizDate        string `bson:"last_quiz_date"` // stored as "YYYY-MM-DD"
+		BonusGamesRemaining int    `bson:"bonus_games_remaining"`
 	}
 	err = usersColl.FindOne(dbCtx, bson.M{"_id": oid}).Decode(&userDoc)
 	if err != nil && err != mongo.ErrNoDocuments {
 		log.Printf("enforceQuota: user lookup error for %s: %v", userID, err)
-		// Fail open
-		return nil
+		return nil // fail open
 	}
 
 	today := time.Now().UTC().Format("2006-01-02")
 
-	// If last_quiz_date is a different day, the counter resets
+	// If last_quiz_date is a different day, the free counter resets
 	usedToday := 0
 	if userDoc.LastQuizDate == today {
 		usedToday = userDoc.DailyQuizUsed
 	}
 
-	if usedToday >= 5 {
+	freeExhausted := usedToday >= 5
+	hasBonus := userDoc.BonusGamesRemaining > 0
+
+	// Block only when free quota is gone AND no bonus games remain
+	if freeExhausted && !hasBonus {
 		return status.Error(codes.ResourceExhausted,
 			"Daily free limit reached. Upgrade to Premium for unlimited games.")
 	}
 
-	// 3. Increment the counter (and update date) atomically
-	_, err = usersColl.UpdateOne(dbCtx,
-		bson.M{"_id": oid},
-		bson.M{"$set": bson.M{
-			"last_quiz_date":  today,
-			"daily_quiz_used": usedToday + 1,
-		}},
-	)
-	if err != nil {
-		log.Printf("enforceQuota: failed to increment daily_quiz_used for user %s: %v", userID, err)
-		// Fail open — don't block the user
+	// 3. Consume the right resource atomically
+	if freeExhausted && hasBonus {
+		// Free quota exhausted — consume a bonus game instead
+		_, err = usersColl.UpdateOne(dbCtx,
+			bson.M{"_id": oid},
+			bson.M{"$inc": bson.M{"bonus_games_remaining": -1}},
+		)
+		if err != nil {
+			log.Printf("enforceQuota: failed to decrement bonus_games for user %s: %v", userID, err)
+		}
+		log.Printf("enforceQuota: bonus game consumed — user %s (bonus left: %d)", userID, userDoc.BonusGamesRemaining-1)
+	} else {
+		// Using a free game — increment daily counter
+		_, err = usersColl.UpdateOne(dbCtx,
+			bson.M{"_id": oid},
+			bson.M{"$set": bson.M{
+				"last_quiz_date":  today,
+				"daily_quiz_used": usedToday + 1,
+			}},
+		)
+		if err != nil {
+			log.Printf("enforceQuota: failed to increment daily_quiz_used for user %s: %v", userID, err)
+			// Fail open — don't block the user
+		}
 	}
 
-	// 4. Mirror remaining quota to Redis for observability (GET user:{id}:daily_quota)
-	remaining := 5 - (usedToday + 1)
-	if remaining < 0 {
-		remaining = 0
+	// 4. Mirror remaining quota to Redis for observability
+	freeRemaining := 5 - (usedToday + 1)
+	if freeRemaining < 0 {
+		freeRemaining = 0
 	}
 	conn := h.pool.Get()
 	defer conn.Close()
 	quotaKey := fmt.Sprintf("user:%s:daily_quota", userID)
-	conn.Do("SET", quotaKey, remaining, "EX", 86400) //nolint:errcheck
+	conn.Do("SET", quotaKey, freeRemaining, "EX", 86400) //nolint:errcheck
 
 	return nil
 }

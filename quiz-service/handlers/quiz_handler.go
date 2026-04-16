@@ -17,6 +17,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"quiz-battle/quiz/rabbitmq"
 	rdb "quiz-battle/quiz/redis"
@@ -297,6 +298,7 @@ func (h *QuizServiceHandler) SubmitAnswer(ctx context.Context, req *quiz.AnswerR
 	// "all players answered" immediately. The scoring consumer uses the
 	// "answers" hash for idempotency — we must NOT write there or it skips scoring.
 	rdConn := h.redisPool.Get()
+	defer rdConn.Close()
 	submittedKey := fmt.Sprintf("room:%s:submitted:%d", req.RoomId, req.RoundNumber)
 	setRes, setErr := rdConn.Do("HSETNX", submittedKey, req.UserId, req.AnswerIndex)
 	rdConn.Do("EXPIRE", submittedKey, 30*60) //nolint:errcheck
@@ -304,12 +306,20 @@ func (h *QuizServiceHandler) SubmitAnswer(ctx context.Context, req *quiz.AnswerR
 
 	// Fetch the round start time for response-time calculation.
 	var roundStartedAtMs int64
-	if startedAt, err := goredis.Int64(rdConn.Do("GET",
-		fmt.Sprintf("room:%s:round:%d:started_at", req.RoomId, req.RoundNumber),
-	)); err == nil {
+	startedAtKey := fmt.Sprintf("room:%s:round:%d:started_at", req.RoomId, req.RoundNumber)
+	if startedAt, err := goredis.Int64(rdConn.Do("GET", startedAtKey)); err == nil {
 		roundStartedAtMs = startedAt
+	} else {
+		log.Printf("⚠️  Could not read round start time: key=%s err=%v", startedAtKey, err)
 	}
-	rdConn.Close()
+
+	// Use SERVER receive time instead of client's SubmittedAtMs to avoid
+	// clock skew between emulators/devices. The server clock is the single
+	// source of truth for both roundStartedAtMs and submittedAtMs.
+	serverNowMs := time.Now().UnixMilli()
+
+	log.Printf("🔍 SubmitAnswer timing — user=%s round=%d clientSubmitted=%d serverNow=%d roundStart=%d serverDiff=%dms",
+		req.UserId, req.RoundNumber, req.SubmittedAtMs, serverNowMs, roundStartedAtMs, serverNowMs-roundStartedAtMs)
 
 	event := rabbitmq.AnswerSubmittedEvent{
 		RoomID:           req.RoomId,
@@ -317,7 +327,7 @@ func (h *QuizServiceHandler) SubmitAnswer(ctx context.Context, req *quiz.AnswerR
 		RoundNumber:      int(req.RoundNumber),
 		QuestionID:       req.QuestionId,
 		AnswerIndex:      int(req.AnswerIndex),
-		SubmittedAtMs:    req.SubmittedAtMs,
+		SubmittedAtMs:    serverNowMs, // server timestamp — no clock skew
 		RoundStartedAtMs: roundStartedAtMs,
 	}
 
@@ -397,37 +407,9 @@ func (h *QuizServiceHandler) StreamGameEvents(req *quiz.StreamRequest, stream gr
 	})
 
 	// The first subscriber triggers the game loop (subsequent ones just receive)
-	isFirstSub := false
 	room.startOnce.Do(func() {
-		isFirstSub = true
 		go h.runGameLoop(roomID, room)
 	})
-
-	// ── Late-joiner catch-up ─────────────────────────────────
-	// If the game loop already started (not the first subscriber),
-	// send the current question + timer so the player isn't blind.
-	if !isFirstSub {
-		if qEvent, _, deadlineMs := room.getCurrentQuestion(); qEvent != nil && deadlineMs > time.Now().UnixMilli() {
-			// Send current question
-			if err := stream.Send(qEvent); err != nil {
-				return err
-			}
-			// Send current timer state
-			if err := stream.Send(&quiz.GameEvent{
-				Event: &quiz.GameEvent_TimerSync{
-					TimerSync: &quiz.TimerSync{
-						RoundNumber:  qEvent.GetQuestion().RoundNumber,
-						ServerTimeMs: time.Now().UnixMilli(),
-						DeadlineMs:   deadlineMs,
-					},
-				},
-			}); err != nil {
-				return err
-			}
-			log.Printf("📋 Late-joiner %s caught up: round %d, %dms remaining",
-				req.UserId, qEvent.GetQuestion().RoundNumber, deadlineMs-time.Now().UnixMilli())
-		}
-	}
 
 	ctx := stream.Context()
 	for {
@@ -558,10 +540,11 @@ func (h *QuizServiceHandler) runGameLoop(roomID string, room *gameRoom) {
 	// Update player ratings in MongoDB based on XP earned
 	h.updatePlayerRatings(matchEnd)
 
-	// Clear old match_history for these players, then save current match only.
-	// This ensures fresh questions each match (for demo; production would use LLM recommendations).
-	h.clearMatchHistory(matchEnd)
-	h.saveMatchHistory(matchEnd, playedQuestionIDs)
+	// Save this match, then trim to keep only the last 3 per player.
+	// Keeping 3 serves both profile display (last 3 matches) and question
+	// deduplication (questions from recent matches are excluded from future draws).
+	h.saveMatchHistory(matchEnd, playedQuestionIDs, matchStartedAt)
+	h.trimMatchHistory(matchEnd, 3)
 
 	// Give clients time to receive MatchEnd before closeAll() in defer
 	time.Sleep(3 * time.Second)
@@ -591,9 +574,9 @@ func (h *QuizServiceHandler) buildRoundResultEvent(roomID string, roundNum int, 
 	}, nil
 }
 
-// findFastestCorrectAnswer checks the answers hash for this round and finds who
-// answered correctly. It then cross-references with response times to find the fastest.
-// Returns empty strings if no one answered correctly.
+// findFastestCorrectAnswer checks per-round response times to find who answered
+// correctly the fastest THIS round (not cumulative avg). Returns empty if no one
+// was correct. If tied on time, returns empty userID (tie).
 func (h *QuizServiceHandler) findFastestCorrectAnswer(roomID string, roundNum int, correctIndex int) (userID, username string) {
 	conn := h.redisPool.Get()
 	defer conn.Close()
@@ -605,49 +588,61 @@ func (h *QuizServiceHandler) findFastestCorrectAnswer(roomID string, roundNum in
 		return "", ""
 	}
 
-	// Get response times: {userId: totalMs, ...}
-	sumKey := fmt.Sprintf("room:%s:response_sum", roomID)
-	countKey := fmt.Sprintf("room:%s:response_count", roomID)
+	// Get per-round response times: {userId: responseMs, ...}
+	roundTimeKey := fmt.Sprintf("room:%s:round_time:%d", roomID, roundNum)
+	roundTimes, _ := goredis.Int64Map(conn.Do("HGETALL", roundTimeKey))
 
-	// Collect userIDs who answered correctly
-	var correctUsers []string
+	// Collect correct users with their per-round response time
+	type entry struct {
+		uid  string
+		time int64
+	}
+	var correctUsers []entry
 	for uid, ansStr := range answers {
 		var idx int
 		fmt.Sscanf(ansStr, "%d", &idx)
 		if idx == correctIndex {
-			correctUsers = append(correctUsers, uid)
+			t := roundTimes[uid]
+			correctUsers = append(correctUsers, entry{uid, t})
 		}
 	}
 
 	if len(correctUsers) == 0 {
-		return "", "" // no one got it right
+		return "", ""
 	}
 
-	// If only one correct, that's the fastest
 	if len(correctUsers) == 1 {
-		uid := correctUsers[0]
-		name := h.getUsernameFromRedis(conn, roomID, uid)
-		return uid, name
+		uid := correctUsers[0].uid
+		return uid, h.getUsernameFromRedis(conn, roomID, uid)
 	}
 
-	// Multiple correct — find the one with lowest avg response time
-	// (response_sum / response_count gives avg, lower = faster)
-	bestUID := correctUsers[0]
-	bestAvg := int64(999999999)
-	for _, uid := range correctUsers {
-		sum, _ := goredis.Int64(conn.Do("HGET", sumKey, uid))
-		cnt, _ := goredis.Int64(conn.Do("HGET", countKey, uid))
-		if cnt > 0 {
-			avg := sum / cnt
-			if avg < bestAvg {
-				bestAvg = avg
-				bestUID = uid
-			}
+	// Find fastest — if two have same time (within 100ms tolerance), it's a tie
+	best := correctUsers[0]
+	for _, e := range correctUsers[1:] {
+		if e.time > 0 && (best.time == 0 || e.time < best.time) {
+			best = e
 		}
 	}
 
-	name := h.getUsernameFromRedis(conn, roomID, bestUID)
-	return bestUID, name
+	// Check for tie: is anyone within 100ms of the best?
+	tieCount := 0
+	for _, e := range correctUsers {
+		if e.uid != best.uid && e.time > 0 {
+			diff := e.time - best.time
+			if diff < 0 {
+				diff = -diff
+			}
+			if diff <= 100 { // within 100ms = tie
+				tieCount++
+			}
+		}
+	}
+	if tieCount > 0 {
+		return "", "" // tie — no single fastest player
+	}
+
+	name := h.getUsernameFromRedis(conn, roomID, best.uid)
+	return best.uid, name
 }
 
 func (h *QuizServiceHandler) getUsernameFromRedis(conn goredis.Conn, roomID, userID string) string {
@@ -813,8 +808,8 @@ func (h *QuizServiceHandler) buildMatchEndEvent(roomID string, totalRounds int, 
 	}, nil
 }
 
-// updatePlayerRatings bumps each player's rating in MongoDB by their match score.
-// XP = score earned during the match (base points + speed bonus).
+// updatePlayerRatings bumps each player's rating in MongoDB by their match score
+// and persists match stats (played, won, coins, streaks) so they survive app reinstall.
 func (h *QuizServiceHandler) updatePlayerRatings(matchEndEvent *quiz.GameEvent) {
 	me := matchEndEvent.GetMatchEnd()
 	if me == nil {
@@ -824,61 +819,92 @@ func (h *QuizServiceHandler) updatePlayerRatings(matchEndEvent *quiz.GameEvent) 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	winnerID := me.WinnerUserId
+
 	users := h.mongoDB.Collection("users")
 	for _, ps := range me.FinalScores {
-		if ps.Score <= 0 {
-			continue
-		}
 		oid, err := primitive.ObjectIDFromHex(ps.UserId)
 		if err != nil {
-			// userId might not be a valid ObjectID (legacy)
 			log.Printf("⚠️  updateRatings: invalid userId %s: %v", ps.UserId, err)
 			continue
 		}
-		result, err := users.UpdateByID(ctx, oid, bson.M{
-			"$inc": bson.M{"rating": int(ps.Score)},
-		})
+
+		// Always increment matches_played; conditionally increment matches_won
+		inc := bson.M{
+			"matches_played": 1,
+		}
+		if ps.Score > 0 {
+			inc["rating"] = int(ps.Score)
+		}
+		if ps.UserId == winnerID {
+			inc["matches_won"] = 1
+		}
+
+		result, err := users.UpdateByID(ctx, oid, bson.M{"$inc": inc})
 		if err != nil {
 			log.Printf("⚠️  updateRatings: user %s: %v", ps.UserId, err)
 			continue
 		}
 		if result.ModifiedCount > 0 {
-			log.Printf("📈 Rating updated — user: %s (+%d)", ps.Username, ps.Score)
+			won := ""
+			if ps.UserId == winnerID {
+				won = " (winner)"
+			}
+			log.Printf("📈 Stats updated — user: %s (+%d rating, +1 played%s)", ps.Username, ps.Score, won)
 		}
 	}
 }
 
-// saveMatchHistory writes played question IDs to match_history so they're
-// excluded from future matches for these players.
-// clearMatchHistory removes old match_history entries for these players
-// so each match gets a fresh question pool (demo mode).
-func (h *QuizServiceHandler) clearMatchHistory(matchEndEvent *quiz.GameEvent) {
+// trimMatchHistory keeps only the most recent `keep` match_history documents
+// for each player in the match. Older records beyond that are deleted.
+// This lets the profile show the last N matches while also bounding the
+// question-deduplication window to recent matches only.
+func (h *QuizServiceHandler) trimMatchHistory(matchEndEvent *quiz.GameEvent, keep int) {
 	me := matchEndEvent.GetMatchEnd()
 	if me == nil {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	var playerIDs []string
-	for _, ps := range me.FinalScores {
-		playerIDs = append(playerIDs, ps.UserId)
-	}
+	col := h.mongoDB.Collection("match_history")
 
-	result, err := h.mongoDB.Collection("match_history").DeleteMany(ctx, bson.M{
-		"players.userId": bson.M{"$in": playerIDs},
-	})
-	if err != nil {
-		log.Printf("⚠️  clearMatchHistory: %v", err)
-		return
-	}
-	if result.DeletedCount > 0 {
-		log.Printf("🗑️  Cleared %d old match_history entries", result.DeletedCount)
+	for _, ps := range me.FinalScores {
+		// Find the IDs of this player's most recent `keep` records (newest first).
+		opts := options.Find().
+			SetSort(bson.D{{Key: "createdAt", Value: -1}}).
+			SetSkip(int64(keep)).
+			SetProjection(bson.M{"_id": 1})
+
+		cursor, err := col.Find(ctx, bson.M{"players.userId": ps.UserId}, opts)
+		if err != nil {
+			log.Printf("⚠️  trimMatchHistory find %s: %v", ps.UserId, err)
+			continue
+		}
+
+		var toDelete []interface{}
+		for cursor.Next(ctx) {
+			toDelete = append(toDelete, cursor.Current.Lookup("_id").ObjectID())
+		}
+		cursor.Close(ctx) //nolint:errcheck
+
+		if len(toDelete) == 0 {
+			continue
+		}
+
+		res, err := col.DeleteMany(ctx, bson.M{"_id": bson.M{"$in": toDelete}})
+		if err != nil {
+			log.Printf("⚠️  trimMatchHistory delete %s: %v", ps.UserId, err)
+			continue
+		}
+		if res.DeletedCount > 0 {
+			log.Printf("🗑️  Trimmed %d old match_history entries for user %s", res.DeletedCount, ps.UserId)
+		}
 	}
 }
 
-func (h *QuizServiceHandler) saveMatchHistory(matchEndEvent *quiz.GameEvent, questionIDs []string) {
+func (h *QuizServiceHandler) saveMatchHistory(matchEndEvent *quiz.GameEvent, questionIDs []string, matchStartedAt time.Time) {
 	me := matchEndEvent.GetMatchEnd()
 	if me == nil {
 		return
@@ -891,12 +917,12 @@ func (h *QuizServiceHandler) saveMatchHistory(matchEndEvent *quiz.GameEvent, que
 	// has username, score, rank, answersCorrect, avgResponseMs populated by
 	// buildMatchEndEvent → buildPlayerScores → GetPlayerMeta.
 	type playerEntry struct {
-		UserID        string `bson:"userId"`
-		Username      string `bson:"username"`
-		FinalScore    int32  `bson:"finalScore"`
-		Rank          int32  `bson:"rank"`
-		AnswersCorrect int32 `bson:"answersCorrect"`
-		AvgResponseMs int32  `bson:"avgResponseTimeMs"`
+		UserID         string `bson:"userId"`
+		Username       string `bson:"username"`
+		FinalScore     int32  `bson:"finalScore"`
+		Rank           int32  `bson:"rank"`
+		AnswersCorrect int32  `bson:"answersCorrect"`
+		AvgResponseMs  int32  `bson:"avgResponseTimeMs"`
 	}
 	players := make([]playerEntry, len(me.FinalScores))
 	for i, ps := range me.FinalScores {
@@ -910,14 +936,16 @@ func (h *QuizServiceHandler) saveMatchHistory(matchEndEvent *quiz.GameEvent, que
 		}
 	}
 
+	// Use actual rounds played (len of question IDs consumed), not configured total.
+	// Use matchStartedAt for createdAt and exact ms duration — not the rounded int32.
 	doc := bson.M{
 		"roomId":      me.RoomId,
 		"players":     players,
 		"questionIds": questionIDs,
-		"rounds":      me.TotalRounds,
+		"rounds":      len(questionIDs),
 		"winner":      me.WinnerUserId,
-		"createdAt":   time.Now(),
-		"durationMs":  int64(me.DurationSeconds) * 1000,
+		"createdAt":   matchStartedAt,
+		"durationMs":  time.Since(matchStartedAt).Milliseconds(),
 	}
 
 	_, err := h.mongoDB.Collection("match_history").InsertOne(ctx, doc)

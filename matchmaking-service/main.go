@@ -91,6 +91,9 @@ func main() {
 	referralHandler := handlers.NewReferralHandler(mongoDB)
 	referralHandler.SetRedisPool(redisPool)
 	deviceTokenHandler := handlers.NewDeviceTokenHandler(mongoDB)
+	userStatsHandler := handlers.NewUserStatsHandler(mongoDB)
+	tournamentHandler := handlers.NewTournamentHandler(mongoDB)
+	changePasswordHandler := handlers.NewChangePasswordHandler(mongoDB)
 
 	mux := http.NewServeMux()
 	mux.Handle("/leaderboard", leaderboardHandler)
@@ -173,6 +176,64 @@ func main() {
 			return
 		}
 		deviceTokenHandler.ServeHTTP(w, r)
+	})
+
+	// ── Tournament endpoints ─────────────────────────────────────
+	mux.HandleFunc("/tournament/list", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodOptions {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		tournamentHandler.List(w, r)
+	})
+	mux.HandleFunc("/tournament/detail", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodOptions {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		tournamentHandler.Detail(w, r)
+	})
+	mux.HandleFunc("/tournament/join", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodOptions {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		tournamentHandler.Join(w, r)
+	})
+
+	// ── User stats endpoint ──────────────────────────────────────
+	// GET /user/stats — returns persistent stats (played, won, coins, streak) from MongoDB.
+	mux.HandleFunc("/user/stats", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodOptions {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		userStatsHandler.ServeHTTP(w, r)
+	})
+
+	// ── Change password endpoint ─────────────────────────────────
+	// POST /user/change-password — requires JWT, updates password_hash in MongoDB.
+	mux.HandleFunc("/user/change-password", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodOptions {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		changePasswordHandler.ServeHTTP(w, r)
 	})
 
 	go func() {

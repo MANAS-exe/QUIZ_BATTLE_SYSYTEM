@@ -290,35 +290,15 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen> {
             ? 'Yearly Plan — ₹3,999/year'
             : 'Monthly Plan — ₹499/month',
         'prefill': {
-          'contact': '',
-          'email': '',
+          'contact': '9876543210',
+          'email': auth.email ?? 'user@quizbattle.com',
           'name': body['username'] as String? ?? '',
+          'method': 'upi', // Pre-select UPI as default method
         },
-        // Enable all payment methods including UPI
-        'method': {
-          'netbanking': true,
-          'card': true,
-          'upi': true,
-          'wallet': true,
-          'emi': false,
-        },
-        // UPI-specific: show UPI intent apps (GPay, PhonePe, Paytm, etc.)
-        'config': {
-          'display': {
-            'blocks': {
-              'utib': {'name': 'Pay via UPI', 'instruments': [{'method': 'upi'}]},
-              'other': {'name': 'Other methods', 'instruments': [
-                {'method': 'card'},
-                {'method': 'netbanking'},
-                {'method': 'wallet'},
-              ]},
-            },
-            'sequence': ['block.utib', 'block.other'],
-            'preferences': {'show_default_blocks': false},
-          },
+        'upi': {
+          'flow': 'collect', // Forces UPI collect flow (enter VPA) — works without UPI apps
         },
         'theme': {'color': '#C96442'},
-        'modal': {'ondismiss': ''},
       };
 
       _lastOptions = options;
@@ -466,7 +446,17 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen> {
                   loading: () => const SizedBox.shrink(),
                   error: (_, __) => const SizedBox.shrink(),
                   data: (payments) => payments.isEmpty
-                      ? const SizedBox.shrink()
+                      ? Padding(
+                          padding: const EdgeInsets.only(top: 20),
+                          child: Column(
+                            children: [
+                              Icon(Icons.receipt_long_rounded, color: Colors.white.withValues(alpha: 0.15), size: 48),
+                              const SizedBox(height: 10),
+                              Text('No payment history yet',
+                                  style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 13)),
+                            ],
+                          ),
+                        )
                       : _PaymentHistorySection(payments: payments),
                 ),
               ],
@@ -540,7 +530,7 @@ class _CurrentPlanCard extends StatelessWidget {
                   )
                 else if (!isPremium)
                   const Text(
-                    '1 free game per day',
+                    '5 free games per day',
                     style: TextStyle(color: Colors.white60, fontSize: 13),
                   ),
               ],
@@ -585,9 +575,9 @@ class _FeatureComparisonTable extends StatelessWidget {
   const _FeatureComparisonTable();
 
   static const _features = [
-    ('Daily games', '1 / day', 'Unlimited'),
+    ('Daily games', '5 / day', 'Unlimited'),
     ('Spectate matches', 'No', 'Yes'),
-    ('Global leaderboard', 'Top 10 only', 'Full rankings'),
+    ('Global leaderboard', 'Top 3 only', 'Full rankings'),
     ('Priority matchmaking', 'No', 'Yes'),
     ('Detailed stats', 'Basic', 'Advanced'),
     ('Ad-free experience', 'No', 'Yes'),
